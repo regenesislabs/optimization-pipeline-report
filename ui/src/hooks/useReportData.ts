@@ -11,10 +11,17 @@ interface ReportData {
   worldsStats: WorldsStats | null;
 }
 
+interface GeneratingStatus {
+  generating: boolean;
+  progress: number;
+  progressMessage: string;
+}
+
 interface UseReportDataResult {
   data: ReportData | null;
   isLoading: boolean;
   error: string | null;
+  generatingStatus: GeneratingStatus | null;
 }
 
 function decompressData(compressed: CompressedReportData): ReportData {
@@ -54,21 +61,63 @@ export function useReportData(): UseReportDataResult {
   const [data, setData] = useState<ReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generatingStatus, setGeneratingStatus] = useState<GeneratingStatus | null>(null);
 
   useEffect(() => {
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+
     async function fetchData() {
       try {
         setIsLoading(true);
         setError(null);
 
         const response = await fetch(URLS.reportData);
+
+        if (response.status === 503) {
+          // Report not ready yet - check if generating
+          const statusData = await response.json();
+          if (statusData.generating) {
+            setGeneratingStatus({
+              generating: true,
+              progress: statusData.progress || 0,
+              progressMessage: statusData.progressMessage || 'Generating report...',
+            });
+            setIsLoading(false);
+
+            // Start polling for updates
+            if (!pollInterval) {
+              pollInterval = setInterval(fetchData, 3000);
+            }
+            return;
+          } else {
+            setGeneratingStatus({
+              generating: false,
+              progress: 0,
+              progressMessage: statusData.progressMessage || 'Waiting for first report generation...',
+            });
+            setIsLoading(false);
+            // Poll less frequently when waiting
+            if (!pollInterval) {
+              pollInterval = setInterval(fetchData, 10000);
+            }
+            return;
+          }
+        }
+
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        // Clear polling when we have data
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
         }
 
         const compressed: CompressedReportData = await response.json();
         const decompressed = decompressData(compressed);
         setData(decompressed);
+        setGeneratingStatus(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load report data');
       } finally {
@@ -77,7 +126,13 @@ export function useReportData(): UseReportDataResult {
     }
 
     fetchData();
+
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
   }, []);
 
-  return { data, isLoading, error };
+  return { data, isLoading, error, generatingStatus };
 }

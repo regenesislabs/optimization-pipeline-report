@@ -33,7 +33,7 @@ function getTabFromHash(): TabName {
 }
 
 export default function App() {
-  const { data, isLoading, error } = useReportData();
+  const { data, isLoading, error, generatingStatus } = useReportData();
   const [activeTab, setActiveTab] = useState<TabName>(getTabFromHash);
   const [mapView, setMapView] = useState<MapView>('optimization');
   const [hoveredLand, setHoveredLand] = useState<{ land: LandData; x: number; y: number } | null>(null);
@@ -76,52 +76,84 @@ export default function App() {
     setSelectedSceneId(null);
   }, []);
 
-  if (isLoading) {
-    return (
-      <div className="container">
-        <div className="loading">Loading report data...</div>
-      </div>
-    );
-  }
+  // Check if report data is ready
+  const reportNotReady = !data && (isLoading || generatingStatus || error);
 
-  if (error || !data) {
-    return (
-      <div className="container">
-        <div className="error-message">
-          Failed to load report: {error || 'Unknown error'}
+  // Render generating/loading status for tabs that need report data
+  const renderReportLoadingStatus = () => {
+    if (isLoading && !generatingStatus) {
+      return <div className="loading">Loading report data...</div>;
+    }
+
+    if (generatingStatus) {
+      return (
+        <div className="generating-status">
+          <h2>{generatingStatus.generating ? 'Generating Report...' : 'Waiting for Report'}</h2>
+          <p className="generating-message">{generatingStatus.progressMessage}</p>
+          {generatingStatus.generating && (
+            <div className="generating-progress">
+              <div className="generating-progress-bar">
+                <div
+                  className="generating-progress-fill"
+                  style={{ width: `${generatingStatus.progress}%` }}
+                />
+              </div>
+              <span className="generating-progress-text">{generatingStatus.progress.toFixed(1)}%</span>
+            </div>
+          )}
         </div>
-      </div>
-    );
-  }
+      );
+    }
+
+    if (error) {
+      return (
+        <div className="error-message">
+          Failed to load report: {error}
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <div className="container">
-      <Header generatedAt={data.generatedAt} />
+      <Header generatedAt={data?.generatedAt || null} />
       <TabNavigation activeTab={activeTab} onTabChange={handleTabChange} />
 
       {activeTab === 'overview' && (
         <div className="tab-content active">
-          <ProgressBar percentage={data.stats.optimizationPercentage} />
-          <StatsGrid stats={data.stats} />
+          {reportNotReady ? (
+            renderReportLoadingStatus()
+          ) : data && (
+            <>
+              <ProgressBar percentage={data.stats.optimizationPercentage} />
+              <StatsGrid stats={data.stats} />
 
-          <div className="map-section">
-            <h2 className="map-title">Interactive World Map</h2>
-            <ViewToggle currentView={mapView} onViewChange={setMapView} />
-            <WorldMap
-              lands={data.lands}
-              sceneColorIndices={data.sceneColorIndices}
-              view={mapView}
-              onLandClick={handleLandClick}
-              onLandHover={handleLandHover}
-            />
-            <Legend view={mapView} />
-          </div>
+              <div className="map-section">
+                <h2 className="map-title">Interactive World Map</h2>
+                <ViewToggle currentView={mapView} onViewChange={setMapView} />
+                <WorldMap
+                  lands={data.lands}
+                  sceneColorIndices={data.sceneColorIndices}
+                  view={mapView}
+                  onLandClick={handleLandClick}
+                  onLandHover={handleLandHover}
+                />
+                <Legend view={mapView} />
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {activeTab === 'worlds' && (
         <div className="tab-content active">
-          <WorldsList worlds={data.worlds} stats={data.worldsStats} />
+          {reportNotReady ? (
+            renderReportLoadingStatus()
+          ) : data && (
+            <WorldsList worlds={data.worlds} stats={data.worldsStats} />
+          )}
         </div>
       )}
 
@@ -139,7 +171,11 @@ export default function App() {
 
       {activeTab === 'failing' && (
         <div className="tab-content active">
-          <FailingView worlds={data.worlds} lands={data.lands} />
+          {reportNotReady ? (
+            renderReportLoadingStatus()
+          ) : data && (
+            <FailingView worlds={data.worlds} lands={data.lands} />
+          )}
         </div>
       )}
 

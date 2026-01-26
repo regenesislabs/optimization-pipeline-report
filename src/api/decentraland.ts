@@ -140,60 +140,69 @@ export class DecentralandAPI {
     return allScenes;
   }
 
-  public async checkOptimizationStatus(scenes: Scene[]): Promise<Scene[]> {
+  public async checkOptimizationStatus(
+    scenes: Scene[],
+    onProgress?: (percent: number, message: string) => void
+  ): Promise<Scene[]> {
     console.log(`\nChecking optimization status for ${scenes.length} scenes...`);
     const uniqueScenes = Array.from(new Map(scenes.map(s => [s.id, s])).values());
-    
+
     try {
       // Try to use S3 API for fast checking
       const s3Checker = new S3OptimizationChecker();
       await s3Checker.initialize();
-      
+
       // Mark scenes based on S3 data
       for (const scene of uniqueScenes) {
         scene.hasOptimizedAssets = s3Checker.hasOptimizedAsset(scene.id);
       }
-      
+
       const optimizedCount = uniqueScenes.filter(s => s.hasOptimizedAssets).length;
       console.log(`Found ${optimizedCount} scenes with optimized assets (using S3 API)`);
-      
+      onProgress?.(50, `Found ${optimizedCount} optimized scenes (S3 API)`);
+
     } catch (error) {
       console.log('S3 API failed, falling back to HTTP HEAD requests...');
-      
+      onProgress?.(0, 'Checking optimization status (HTTP fallback)...');
+
       // Fallback to HTTP HEAD requests
       let checked = 0;
       const batchSize = 10;
-      
+
       for (let i = 0; i < uniqueScenes.length; i += batchSize) {
         const batch = uniqueScenes.slice(i, Math.min(i + batchSize, uniqueScenes.length));
-        
+
         await Promise.all(
           batch.map(async (scene) => {
             scene.hasOptimizedAssets = await this.checkOptimizedAsset(scene.id);
           })
         );
-        
+
         checked += batch.length;
         const progress = (checked / uniqueScenes.length) * 100;
         console.log(`Optimization check progress: ${progress.toFixed(2)}% (${checked}/${uniqueScenes.length})`);
-        
+
+        // Report progress (0-50% for optimization check)
+        onProgress?.(progress * 0.5, `Checking optimization: ${checked}/${uniqueScenes.length} scenes`);
+
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      
+
       const optimizedCount = uniqueScenes.filter(s => s.hasOptimizedAssets).length;
       console.log(`Found ${optimizedCount} scenes with optimized assets (using HTTP)`);
     }
     
     // Fetch reports for scenes without optimized assets
     console.log('\nFetching optimization reports for non-optimized scenes...');
+    onProgress?.(50, 'Fetching optimization reports...');
     const nonOptimizedScenes = uniqueScenes.filter(s => !s.hasOptimizedAssets);
     let reportsChecked = 0;
     let reportsFound = 0;
-    
+
     const reportBatchSize = 20;
     for (let i = 0; i < nonOptimizedScenes.length; i += reportBatchSize) {
       const batch = nonOptimizedScenes.slice(i, Math.min(i + reportBatchSize, nonOptimizedScenes.length));
-      
+
       await Promise.all(
         batch.map(async (scene) => {
           const report = await this.fetchOptimizationReport(scene.id);
@@ -203,14 +212,17 @@ export class DecentralandAPI {
           }
         })
       );
-      
+
       reportsChecked += batch.length;
       const progress = (reportsChecked / nonOptimizedScenes.length) * 100;
       console.log(`Report check progress: ${progress.toFixed(2)}% (${reportsChecked}/${nonOptimizedScenes.length}) - Found ${reportsFound} reports`);
-      
+
+      // Report progress (50-100% for report fetching)
+      onProgress?.(50 + progress * 0.5, `Fetching reports: ${reportsChecked}/${nonOptimizedScenes.length}`);
+
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    
+
     console.log(`Found ${reportsFound} optimization reports`);
     
     return scenes.map(scene => {

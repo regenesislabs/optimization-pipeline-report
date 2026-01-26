@@ -107,14 +107,18 @@ export interface WorldWithOptimization {
 }
 
 // Pipeline Monitoring types
+export type EntityType = 'scene' | 'wearable' | 'emote';
+
 export interface QueueMetrics {
   queueDepth: number;
   lastUpdated: string;
+  entityType?: EntityType;
 }
 
 export interface QueueHistoryPoint {
   queueDepth: number;
   timestamp: string;
+  entityType?: EntityType;
 }
 
 export type ConsumerStatus = 'idle' | 'processing' | 'offline';
@@ -145,8 +149,10 @@ export interface ProcessingHistoryEntry {
 }
 
 export interface MonitoringData {
-  queue: QueueMetrics | null;
-  queueHistory: QueueHistoryPoint[];
+  queue: QueueMetrics | null;  // Legacy, use queues instead
+  queues?: Record<EntityType, QueueMetrics | null>;
+  queueHistory: QueueHistoryPoint[];  // Legacy, use queueHistoryByType instead
+  queueHistoryByType?: Record<EntityType, QueueHistoryPoint[]>;
   consumers: Consumer[];
   recentHistory: ProcessingHistoryEntry[];
   processedLastHour: number;

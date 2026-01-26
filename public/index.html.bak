@@ -390,7 +390,7 @@
         const MIN_COORD = -175;
         const MAX_COORD = 175;
         const GRID_SIZE = MAX_COORD - MIN_COORD + 1;
-        const OPTIMIZATION_URL = 'https://optimized-assets.dclexplorer.com/v2';
+        const OPTIMIZATION_URL = 'https://optimized-assets.dclexplorer.com/v3';
         const R2_BASE_URL = 'https://reports.dclexplorer.com';
         
         let reportData = null;

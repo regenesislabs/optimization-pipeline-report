@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pipeline
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pipeline_secret}
+      POSTGRES_DB: pipeline_report
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pipeline -d pipeline_report"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  optimization-pipeline-report:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # UI configuration - can be overridden in .env or via command line
+        - VITE_OPTIMIZATION_API_URL=${VITE_OPTIMIZATION_API_URL:-https://optimized-assets.dclexplorer.com/v3}
+        - VITE_WORLDS_API_URL=${VITE_WORLDS_API_URL:-https://worlds-content-server.decentraland.org}
+    ports:
+      - "3000:3000"
+    environment:
+      - HTTP_SERVER_PORT=3000
+      - HTTP_SERVER_HOST=0.0.0.0
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=pipeline
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-pipeline_secret}
+      - POSTGRES_DB=pipeline_report
+      - MONITORING_SECRET=${MONITORING_SECRET}
+      - UPLOAD_SECRET=${UPLOAD_SECRET}
+      - PRODUCER_URL=${PRODUCER_URL:-http://queue-producer:7888}
+      - PRODUCER_TMP_SECRET=${PRODUCER_TMP_SECRET}
+      - QUEUE_TRIGGER_PASSWORD=${QUEUE_TRIGGER_PASSWORD:-#Decentraland2025}
+      # R2/S3 credentials (for report generator)
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_REGION=${S3_REGION:-auto}
+      # Report scheduler
+      - REPORT_SCHEDULE_ENABLED=${REPORT_SCHEDULE_ENABLED:-true}
+      - REPORT_SCHEDULE_INTERVAL_HOURS=${REPORT_SCHEDULE_INTERVAL_HOURS:-3}
+      - REPORT_RUN_ON_STARTUP=${REPORT_RUN_ON_STARTUP:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+# Uncomment and use this if you want to connect to the parent asset-pipeline network
+# networks:
+#   default:
+#     name: asset-pipeline-network
+#     external: true

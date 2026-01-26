@@ -1,32 +1,30 @@
 // Centralized configuration for the UI
 
-// Detect if running locally
-const isLocalDev = typeof window !== 'undefined' &&
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-// API URLs
+// API URLs - can be overridden via environment variables at build time
+// Use VITE_* prefix for variables exposed to the frontend
 export const CONFIG = {
   // Base URL for optimization assets (reports, optimized files, etc.)
-  OPTIMIZATION_API_URL: 'https://optimized-assets.dclexplorer.com/v2',
+  // Can be changed from v2 to v3 etc via VITE_OPTIMIZATION_API_URL env var
+  OPTIMIZATION_API_URL: import.meta.env.VITE_OPTIMIZATION_API_URL || 'https://optimized-assets.dclexplorer.com/v3',
 
-  // Base URL for report data (R2 storage) - use proxy for local dev
-  REPORTS_API_URL: isLocalDev ? '/proxy-reports' : 'https://reports.dclexplorer.com',
-
-  // Report data path
-  REPORT_DATA_PATH: 'optimization-pipeline/report.json',
-
-  // Vercel app URL (for API routes) - use empty string for local dev (Vite proxy handles it)
-  VERCEL_APP_URL: isLocalDev ? '' : 'https://optimization-pipeline-report.vercel.app',
+  // API URL for monitoring endpoints and report data
+  // Empty string means same-origin (works for both local dev with Vite proxy and Docker deployment)
+  VERCEL_APP_URL: '',
 
   // Worlds content server API
-  WORLDS_API_URL: 'https://worlds-content-server.decentraland.org',
+  WORLDS_API_URL: import.meta.env.VITE_WORLDS_API_URL || 'https://worlds-content-server.decentraland.org',
 } as const;
 
 // Derived URLs
 export const URLS = {
-  // Full URL for fetching report data
+  // Full URL for fetching report data (from local API)
   get reportData() {
-    return `${CONFIG.REPORTS_API_URL}/${CONFIG.REPORT_DATA_PATH}`;
+    return `${CONFIG.VERCEL_APP_URL}/api/report-data`;
+  },
+
+  // Full URL for fetching report status
+  get reportStatus() {
+    return `${CONFIG.VERCEL_APP_URL}/api/report-status`;
   },
 
   // Full URL for fetching worlds list

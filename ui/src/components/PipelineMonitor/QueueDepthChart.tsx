@@ -16,6 +16,8 @@ interface QueueDepthChartProps {
   history: QueueHistoryPoint[];
   timeRange: TimeRange;
   onTimeRangeChange: (range: TimeRange) => void;
+  color?: string;
+  label?: string;
 }
 
 const TIME_RANGE_MS: Record<TimeRange, number> = {
@@ -60,7 +62,7 @@ function generateTicks(startTime: number, endTime: number, count: number): numbe
   return ticks;
 }
 
-export function QueueDepthChart({ history, timeRange, onTimeRangeChange }: QueueDepthChartProps) {
+export function QueueDepthChart({ history, timeRange, onTimeRangeChange, color = '#667eea', label = 'Queue Depth' }: QueueDepthChartProps) {
   const timeRangeOptions: TimeRange[] = ['7d', '3d', '24h', '12h', '6h', '3h', '1h'];
 
   const { filteredData, domain, ticks } = useMemo(() => {
@@ -117,9 +119,9 @@ export function QueueDepthChart({ history, timeRange, onTimeRangeChange }: Queue
       <ResponsiveContainer width="100%" height={200}>
         <AreaChart data={filteredData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
           <defs>
-            <linearGradient id="queueGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#667eea" stopOpacity={0.8} />
-              <stop offset="95%" stopColor="#764ba2" stopOpacity={0.1} />
+            <linearGradient id={`queueGradient-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={color} stopOpacity={0.8} />
+              <stop offset="95%" stopColor={color} stopOpacity={0.1} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
@@ -149,16 +151,16 @@ export function QueueDepthChart({ history, timeRange, onTimeRangeChange }: Queue
             }}
             labelStyle={{ color: 'white', opacity: 0.8, fontSize: '0.9em' }}
             itemStyle={{ color: 'white', fontWeight: 'bold' }}
-            formatter={(value: number) => [`${value.toLocaleString()} items`, 'Queue Depth']}
+            formatter={(value) => [`${(value ?? 0).toLocaleString()} items`, label]}
             labelFormatter={(value) => formatTooltipTime(value as number)}
           />
           <Area
             type="monotone"
             dataKey="queueDepth"
-            stroke="#667eea"
+            stroke={color}
             strokeWidth={2}
-            fill="url(#queueGradient)"
-            dot={{ r: 3, fill: '#667eea' }}
+            fill={`url(#queueGradient-${color.replace('#', '')})`}
+            dot={{ r: 3, fill: color }}
             activeDot={{ r: 6, stroke: '#fff', strokeWidth: 2 }}
           />
         </AreaChart>

@@ -49,7 +49,9 @@ export function PipelineMonitor() {
 
       <QueueStatus
         queue={data.queue}
+        queues={data.queues}
         queueHistory={data.queueHistory || []}
+        queueHistoryByType={data.queueHistoryByType}
         processedLastHour={data.processedLastHour || 0}
         timeRange={queueRange}
         onTimeRangeChange={setQueueRange}

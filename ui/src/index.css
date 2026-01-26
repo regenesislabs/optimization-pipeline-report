@@ -462,6 +462,54 @@ canvas {
   text-align: center;
 }
 
+.generating-status {
+  text-align: center;
+  padding: 60px 30px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+}
+
+.generating-status h2 {
+  color: #667eea;
+  font-size: 1.8em;
+  margin-bottom: 15px;
+}
+
+.generating-message {
+  color: #64748b;
+  font-size: 1.1em;
+  margin-bottom: 25px;
+}
+
+.generating-progress {
+  max-width: 500px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.generating-progress-bar {
+  flex: 1;
+  height: 12px;
+  background: #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.generating-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  border-radius: 6px;
+  transition: width 0.5s ease;
+}
+
+.generating-progress-text {
+  color: #667eea;
+  font-weight: bold;
+  font-size: 1.1em;
+  min-width: 60px;
+}
+
 .history-view {
   padding: 30px;
 }
@@ -2000,5 +2048,62 @@ canvas {
   color: #6c757d;
   background: #f8f9fa;
   border-radius: 8px;
+}
+
+/* Entity Type Tabs */
+.entity-type-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e9ecef;
+}
+
+.entity-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: #6c757d;
+  transition: all 0.2s;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+
+.entity-tab:hover {
+  color: #333;
+  background: #f8f9fa;
+}
+
+.entity-tab.active {
+  color: #333;
+  font-weight: 600;
+}
+
+.entity-label {
+  font-weight: inherit;
+}
+
+.entity-count {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+}
+
+@media (max-width: 576px) {
+  .entity-type-tabs {
+    flex-wrap: wrap;
+  }
+
+  .entity-tab {
+    flex: 1;
+    justify-content: center;
+    padding: 10px 12px;
+  }
 }
 
