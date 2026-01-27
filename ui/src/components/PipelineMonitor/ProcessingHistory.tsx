@@ -1,25 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { ProcessingHistoryEntry } from '../../types';
 import { ReportModal } from '../ReportModal';
+import { EntityInfo, getEntityTypeInfo } from '../shared/EntityInfo';
 
 interface ProcessingHistoryProps {
   history: ProcessingHistoryEntry[];
 }
-
-interface SceneMetadata {
-  name: string;
-  thumbnail?: string;
-  positions: string[];
-  loading: boolean;
-  isWorld?: boolean;
-  worldName?: string;
-}
-
-const CATALYST_URL = 'https://peer.decentraland.org/content';
-const WORLDS_URL = 'https://worlds-content-server.decentraland.org';
-
-// Shared cache for scene metadata
-const sceneMetadataCache = new Map<string, SceneMetadata>();
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -48,91 +34,14 @@ function formatTimeAgo(timestamp: string): string {
   return `${diffDay}d ago`;
 }
 
-interface EntityResponse {
-  content?: { file: string; hash: string }[];
-  metadata?: {
-    display?: {
-      title?: string;
-      navmapThumbnail?: string;
-    };
-    scene?: {
-      base?: string;
-    };
-    worldConfiguration?: {
-      name?: string;
-    };
-  };
-}
-
-async function fetchSceneData(baseUrl: string, hash: string, isWorld: boolean = false): Promise<SceneMetadata | null> {
-  try {
-    const response = await fetch(`${baseUrl}/contents/${hash}`);
-    if (!response.ok) return null;
-
-    const entity: EntityResponse = await response.json();
-    if (!entity.metadata) return null;
-
-    const metadata = entity.metadata;
-    const name = metadata.display?.title || 'Unnamed Scene';
-    const baseParcel = metadata.scene?.base;
-    const positions = baseParcel ? [baseParcel] : [];
-    const worldName = metadata.worldConfiguration?.name;
-
-    let thumbnail: string | undefined;
-    const navmapThumbnail = metadata.display?.navmapThumbnail;
-    if (navmapThumbnail && entity.content) {
-      const thumbContent = entity.content.find(c => c.file === navmapThumbnail);
-      if (thumbContent) {
-        thumbnail = `${baseUrl}/contents/${thumbContent.hash}`;
-      }
-    }
-
-    return { name, thumbnail, positions, loading: false, isWorld, worldName };
-  } catch {
-    return null;
-  }
-}
-
-async function fetchSceneMetadata(sceneId: string): Promise<SceneMetadata> {
-  const cached = sceneMetadataCache.get(sceneId);
-  if (cached && !cached.loading) return cached;
-
-  let metadata = await fetchSceneData(CATALYST_URL, sceneId, false);
-  if (!metadata) {
-    metadata = await fetchSceneData(WORLDS_URL, sceneId, true);
-  }
-
-  if (!metadata) {
-    const errorMetadata: SceneMetadata = {
-      name: 'Unknown',
-      positions: [],
-      loading: false,
-    };
-    sceneMetadataCache.set(sceneId, errorMetadata);
-    return errorMetadata;
-  }
-
-  sceneMetadataCache.set(sceneId, metadata);
-  return metadata;
-}
-
 interface HistoryCardProps {
   entry: ProcessingHistoryEntry;
   onViewReport: () => void;
 }
 
 function HistoryCard({ entry, onViewReport }: HistoryCardProps) {
-  const [metadata, setMetadata] = useState<SceneMetadata | null>(null);
-
-  useEffect(() => {
-    const cached = sceneMetadataCache.get(entry.sceneId);
-    if (cached) {
-      setMetadata(cached);
-    } else {
-      setMetadata({ name: '', positions: [], loading: true });
-      fetchSceneMetadata(entry.sceneId).then(setMetadata);
-    }
-  }, [entry.sceneId]);
+  const isScene = !entry.entityType || entry.entityType === 'scene';
+  const entityInfo = getEntityTypeInfo(entry.entityType);
 
   return (
     <div className={`history-card ${entry.status}`}>
@@ -140,37 +49,20 @@ function HistoryCard({ entry, onViewReport }: HistoryCardProps) {
         <span className={`history-status ${entry.status}`}>
           {entry.status === 'success' ? '✓ Success' : '✗ Failed'}
         </span>
+        {!isScene && (
+          <span className={`history-entity-badge entity-${entry.entityType}`}>
+            {entityInfo.icon} {entityInfo.label}
+          </span>
+        )}
         <span className="history-time">{formatTimeAgo(entry.completedAt)}</span>
       </div>
 
       <div className="history-scene-info">
-        {metadata?.thumbnail ? (
-          <img
-            src={metadata.thumbnail}
-            alt={metadata.name}
-            className="history-thumbnail"
-          />
-        ) : (
-          <div className="history-thumbnail-placeholder" />
-        )}
-        <div className="history-scene-details">
-          {metadata?.loading ? (
-            <div className="history-scene-name loading">Loading...</div>
-          ) : (
-            <>
-              <div className="history-scene-name" title={metadata?.name}>
-                {metadata?.name || 'Unknown Scene'}
-              </div>
-              {metadata?.isWorld && metadata?.worldName ? (
-                <div className="history-world-name">🌐 {metadata.worldName}</div>
-              ) : (
-                metadata?.positions && metadata.positions.length > 0 && (
-                  <div className="history-position">{metadata.positions[0]}</div>
-                )
-              )}
-            </>
-          )}
-        </div>
+        <EntityInfo
+          entityId={entry.sceneId}
+          entityType={entry.entityType}
+          showThumbnail={true}
+        />
       </div>
 
       <div className="history-scene-id">

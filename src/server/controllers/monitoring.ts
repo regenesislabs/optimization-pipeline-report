@@ -14,6 +14,7 @@ import {
   recordJobComplete,
   recordQueueMetrics,
   getRanking,
+  getFailedJobs,
   setupDatabase
 } from '../logic/monitoring'
 
@@ -416,6 +417,25 @@ export async function rankingHandler(context: HandlerContext): Promise<IHttpServ
     return {
       status: 500,
       body: { error: 'Failed to fetch ranking: ' + error.message }
+    }
+  }
+}
+
+export async function failedJobsHandler(context: HandlerContext): Promise<IHttpServerComponent.IResponse> {
+  const { components } = context
+  const logger = components.logs.getLogger('monitoring')
+
+  try {
+    const result = await getFailedJobs(components.postgres)
+    return {
+      status: 200,
+      body: result
+    }
+  } catch (error: any) {
+    logger.error('Error fetching failed jobs', { error: error.message })
+    return {
+      status: 500,
+      body: { error: 'Failed to fetch failed jobs: ' + error.message }
     }
   }
 }

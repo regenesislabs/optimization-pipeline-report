@@ -2,7 +2,7 @@
 
 export const CONFIG = {
   // API version for optimized assets
-  OPTIMIZATION_API_VERSION: 'v2',
+  OPTIMIZATION_API_VERSION: 'v3',
 
   // Base URL for optimization assets
   OPTIMIZATION_BASE_URL: 'https://optimized-assets.dclexplorer.com',

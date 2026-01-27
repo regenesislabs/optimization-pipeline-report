@@ -1,97 +1,18 @@
 import { useState, useEffect } from 'react';
-import type { WorldWithOptimization, LandData } from '../types';
+import type { WorldWithOptimization, LandData, FailedJobEntry, GeneratingStatus } from '../types';
 import { ReportModal } from './ReportModal';
 import { API_BASE_URL } from '../config';
-
-interface SceneMetadata {
-  name: string;
-  thumbnail?: string;
-  positions: string[];
-  loading: boolean;
-  isWorld?: boolean;
-  worldName?: string;
-}
-
-const CATALYST_URL = 'https://peer.decentraland.org/content';
-const WORLDS_URL = 'https://worlds-content-server.decentraland.org';
-
-// Shared cache for scene metadata
-const sceneMetadataCache = new Map<string, SceneMetadata>();
-
-interface EntityResponse {
-  content?: { file: string; hash: string }[];
-  metadata?: {
-    display?: {
-      title?: string;
-      navmapThumbnail?: string;
-    };
-    scene?: {
-      base?: string;
-    };
-    worldConfiguration?: {
-      name?: string;
-    };
-  };
-}
-
-async function fetchSceneData(baseUrl: string, hash: string, isWorld: boolean = false): Promise<SceneMetadata | null> {
-  try {
-    const response = await fetch(`${baseUrl}/contents/${hash}`);
-    if (!response.ok) return null;
-
-    const entity: EntityResponse = await response.json();
-    if (!entity.metadata) return null;
-
-    const metadata = entity.metadata;
-    const name = metadata.display?.title || 'Unnamed Scene';
-    const baseParcel = metadata.scene?.base;
-    const positions = baseParcel ? [baseParcel] : [];
-    const worldName = metadata.worldConfiguration?.name;
-
-    let thumbnail: string | undefined;
-    const navmapThumbnail = metadata.display?.navmapThumbnail;
-    if (navmapThumbnail && entity.content) {
-      const thumbContent = entity.content.find(c => c.file === navmapThumbnail);
-      if (thumbContent) {
-        thumbnail = `${baseUrl}/contents/${thumbContent.hash}`;
-      }
-    }
-
-    return { name, thumbnail, positions, loading: false, isWorld, worldName };
-  } catch {
-    return null;
-  }
-}
-
-async function fetchSceneMetadata(sceneId: string): Promise<SceneMetadata> {
-  const cached = sceneMetadataCache.get(sceneId);
-  if (cached && !cached.loading) return cached;
-
-  let metadata = await fetchSceneData(CATALYST_URL, sceneId, false);
-  if (!metadata) {
-    metadata = await fetchSceneData(WORLDS_URL, sceneId, true);
-  }
-
-  if (!metadata) {
-    const errorMetadata: SceneMetadata = {
-      name: 'Unknown',
-      positions: [],
-      loading: false,
-    };
-    sceneMetadataCache.set(sceneId, errorMetadata);
-    return errorMetadata;
-  }
-
-  sceneMetadataCache.set(sceneId, metadata);
-  return metadata;
-}
+import { EntityInfo, getCachedMetadata, getEntityTypeInfo } from './shared/EntityInfo';
 
 interface FailingViewProps {
   worlds: WorldWithOptimization[];
   lands: LandData[];
+  generatingStatus?: GeneratingStatus | null;
 }
 
-// Get unique failed scenes from lands
+type DataSource = 'database' | 'report';
+
+// Get unique failed scenes from lands (report mode)
 function getFailedScenes(lands: LandData[]): { sceneId: string; positions: string[] }[] {
   const sceneMap = new Map<string, string[]>();
 
@@ -118,18 +39,6 @@ interface FailedSceneCardProps {
 }
 
 function FailedSceneCard({ sceneId, positions, onViewReport }: FailedSceneCardProps) {
-  const [metadata, setMetadata] = useState<SceneMetadata | null>(null);
-
-  useEffect(() => {
-    const cached = sceneMetadataCache.get(sceneId);
-    if (cached) {
-      setMetadata(cached);
-    } else {
-      setMetadata({ name: '', positions: [], loading: true });
-      fetchSceneMetadata(sceneId).then(setMetadata);
-    }
-  }, [sceneId]);
-
   return (
     <div className="history-card failed">
       <div className="history-card-header">
@@ -138,33 +47,19 @@ function FailedSceneCard({ sceneId, positions, onViewReport }: FailedSceneCardPr
       </div>
 
       <div className="history-scene-info">
-        {metadata?.thumbnail ? (
-          <img
-            src={metadata.thumbnail}
-            alt={metadata.name}
-            className="history-thumbnail"
-          />
-        ) : (
-          <div className="history-thumbnail-placeholder" />
-        )}
-        <div className="history-scene-details">
-          {metadata?.loading ? (
-            <div className="history-scene-name loading">Loading...</div>
-          ) : (
-            <>
-              <div className="history-scene-name" title={metadata?.name}>
-                {metadata?.name || 'Unknown Scene'}
-              </div>
-              {positions.length > 0 && (
-                <div className="history-position">
-                  {positions.slice(0, 3).join(', ')}
-                  {positions.length > 3 && ` +${positions.length - 3} more`}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        <EntityInfo
+          entityId={sceneId}
+          entityType="scene"
+          showThumbnail={true}
+        />
       </div>
+
+      {positions.length > 0 && (
+        <div className="failing-positions">
+          {positions.slice(0, 3).join(', ')}
+          {positions.length > 3 && ` +${positions.length - 3} more`}
+        </div>
+      )}
 
       <div className="history-scene-id">
         <code>{sceneId}</code>
@@ -228,6 +123,71 @@ function FailedWorldCard({ world, onViewReport }: FailedWorldCardProps) {
   );
 }
 
+interface FailedJobCardProps {
+  job: FailedJobEntry;
+  onViewReport: () => void;
+}
+
+function FailedJobCard({ job, onViewReport }: FailedJobCardProps) {
+  const isScene = !job.entityType || job.entityType === 'scene';
+  const entityInfo = getEntityTypeInfo(job.entityType);
+
+  return (
+    <div className="history-card failed">
+      <div className="history-card-header">
+        <span className="failed-badge">FAILED</span>
+        {!isScene && (
+          <span className={`history-entity-badge entity-${job.entityType}`}>
+            {entityInfo.icon} {entityInfo.label}
+          </span>
+        )}
+        <span className="history-time">{formatTimeAgo(job.completedAt)}</span>
+      </div>
+
+      <div className="history-scene-info">
+        <EntityInfo
+          entityId={job.sceneId}
+          entityType={job.entityType}
+          showThumbnail={true}
+        />
+      </div>
+
+      <div className="history-scene-id">
+        <code>{job.sceneId}</code>
+      </div>
+
+      {job.errorMessage && (
+        <div className="failing-error">
+          {job.errorMessage.length > 100
+            ? job.errorMessage.substring(0, 100) + '...'
+            : job.errorMessage}
+        </div>
+      )}
+
+      <div className="history-card-footer">
+        <button className="history-view-report-btn" onClick={onViewReport}>
+          View Report
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function formatTimeAgo(timestamp: string): string {
+  const now = new Date();
+  const time = new Date(timestamp);
+  const diffMs = now.getTime() - time.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay}d ago`;
+}
+
 interface BulkQueueResult {
   success: boolean;
   total: number;
@@ -239,9 +199,9 @@ interface BulkQueueResult {
   };
 }
 
-export function FailingView({ worlds, lands }: FailingViewProps) {
+export function FailingView({ worlds, lands, generatingStatus }: FailingViewProps) {
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'scenes' | 'worlds'>('all');
+  const [filter, setFilter] = useState<'all' | 'scenes' | 'worlds' | 'wearables' | 'emotes'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [password, setPassword] = useState('');
@@ -250,26 +210,67 @@ export function FailingView({ worlds, lands }: FailingViewProps) {
   const [queueError, setQueueError] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
 
+  // Data source toggle state
+  const [dataSource, setDataSource] = useState<DataSource>('database');
+  const [failedJobs, setFailedJobs] = useState<FailedJobEntry[]>([]);
+  const [isLoadingJobs, setIsLoadingJobs] = useState(false);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+
+  // Disable report mode when generating
+  const isReportDisabled = generatingStatus?.generating || false;
+
+  // Auto-switch to database if report is generating
+  useEffect(() => {
+    if (isReportDisabled && dataSource === 'report') {
+      setDataSource('database');
+    }
+  }, [isReportDisabled, dataSource]);
+
+  // Fetch failed jobs from database when in database mode
+  useEffect(() => {
+    if (dataSource === 'database') {
+      fetchFailedJobs();
+    }
+  }, [dataSource]);
+
+  async function fetchFailedJobs() {
+    setIsLoadingJobs(true);
+    setJobsError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/monitoring/failed-jobs`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch failed jobs');
+      }
+      const data = await response.json();
+      setFailedJobs(data.failed || []);
+    } catch (err) {
+      setJobsError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIsLoadingJobs(false);
+    }
+  }
+
+  // Report mode data
   const failedWorlds = worlds.filter(w => w.hasFailed);
   const failedScenes = getFailedScenes(lands);
+  const reportTotalFailed = failedWorlds.length + failedScenes.length;
 
-  const totalFailed = failedWorlds.length + failedScenes.length;
+  // Database mode data - group by entity type
+  const dbScenes = failedJobs.filter(j => !j.entityType || j.entityType === 'scene');
+  const dbWearables = failedJobs.filter(j => j.entityType === 'wearable');
+  const dbEmotes = failedJobs.filter(j => j.entityType === 'emote');
 
-  // Filter scenes based on search query (by name, position, or sceneId)
+  // Filter based on search query
   const filteredScenes = failedScenes.filter(scene => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
-    // Check positions
     if (scene.positions.some(pos => pos.includes(query))) return true;
-    // Check sceneId
     if (scene.sceneId.toLowerCase().includes(query)) return true;
-    // Check cached metadata name
-    const metadata = sceneMetadataCache.get(scene.sceneId);
+    const metadata = getCachedMetadata(scene.sceneId);
     if (metadata?.name?.toLowerCase().includes(query)) return true;
     return false;
   });
 
-  // Filter worlds based on search query
   const filteredWorlds = failedWorlds.filter(world => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
@@ -279,15 +280,40 @@ export function FailingView({ worlds, lands }: FailingViewProps) {
     return false;
   });
 
-  // Get scene IDs based on current filter AND search query
+  const filteredDbJobs = failedJobs.filter(job => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    if (job.sceneId.toLowerCase().includes(query)) return true;
+    return false;
+  });
+
+  const filteredDbScenes = filteredDbJobs.filter(j => !j.entityType || j.entityType === 'scene');
+  const filteredDbWearables = filteredDbJobs.filter(j => j.entityType === 'wearable');
+  const filteredDbEmotes = filteredDbJobs.filter(j => j.entityType === 'emote');
+
+  // Get scene IDs based on current filter and data source
   const getSceneIdsToQueue = (): string[] => {
     const ids: string[] = [];
-    if (filter === 'all' || filter === 'scenes') {
-      ids.push(...filteredScenes.map(s => s.sceneId));
+
+    if (dataSource === 'report') {
+      if (filter === 'all' || filter === 'scenes') {
+        ids.push(...filteredScenes.map(s => s.sceneId));
+      }
+      if (filter === 'all' || filter === 'worlds') {
+        ids.push(...filteredWorlds.map(w => w.sceneId));
+      }
+    } else {
+      if (filter === 'all') {
+        ids.push(...filteredDbJobs.map(j => j.sceneId));
+      } else if (filter === 'scenes') {
+        ids.push(...filteredDbScenes.map(j => j.sceneId));
+      } else if (filter === 'wearables') {
+        ids.push(...filteredDbWearables.map(j => j.sceneId));
+      } else if (filter === 'emotes') {
+        ids.push(...filteredDbEmotes.map(j => j.sceneId));
+      }
     }
-    if (filter === 'all' || filter === 'worlds') {
-      ids.push(...filteredWorlds.map(w => w.sceneId));
-    }
+
     return ids;
   };
 
@@ -350,37 +376,133 @@ export function FailingView({ worlds, lands }: FailingViewProps) {
     setQueueError(null);
   };
 
-  if (totalFailed === 0) {
-    return (
-      <div className="failing-view">
-        <h3>Failing Scenes & Worlds</h3>
-        <div className="no-failing">
-          No failing scenes or worlds found. Everything is working correctly!
+  // Calculate totals based on data source
+  const totalFailed = dataSource === 'report' ? reportTotalFailed : failedJobs.length;
+
+  // Render content based on data source
+  const renderContent = () => {
+    if (dataSource === 'database') {
+      if (isLoadingJobs) {
+        return <div className="loading">Loading failed jobs from database...</div>;
+      }
+      if (jobsError) {
+        return <div className="error-message">Error: {jobsError}</div>;
+      }
+      if (failedJobs.length === 0) {
+        return (
+          <div className="no-failing">
+            No failed jobs found in the database history.
+          </div>
+        );
+      }
+
+      // Filter by entity type
+      let jobsToShow = filteredDbJobs;
+      if (filter === 'scenes') jobsToShow = filteredDbScenes;
+      else if (filter === 'wearables') jobsToShow = filteredDbWearables;
+      else if (filter === 'emotes') jobsToShow = filteredDbEmotes;
+
+      return (
+        <div className="history-grid">
+          {jobsToShow.map((job) => (
+            <FailedJobCard
+              key={`${job.sceneId}-${job.completedAt}`}
+              job={job}
+              onViewReport={() => setSelectedSceneId(job.sceneId)}
+            />
+          ))}
         </div>
+      );
+    }
+
+    // Report mode
+    if (reportTotalFailed === 0) {
+      return (
+        <div className="no-failing">
+          No failing scenes or worlds found in the report.
+        </div>
+      );
+    }
+
+    const showScenes = filter === 'all' || filter === 'scenes';
+    const showWorlds = filter === 'all' || filter === 'worlds';
+
+    return (
+      <div className="history-grid">
+        {showWorlds && filteredWorlds.map((world) => (
+          <FailedWorldCard
+            key={world.sceneId}
+            world={world}
+            onViewReport={() => setSelectedSceneId(world.sceneId)}
+          />
+        ))}
+        {showScenes && filteredScenes.map((scene) => (
+          <FailedSceneCard
+            key={scene.sceneId}
+            sceneId={scene.sceneId}
+            positions={scene.positions}
+            onViewReport={() => setSelectedSceneId(scene.sceneId)}
+          />
+        ))}
       </div>
     );
-  }
-
-  const showScenes = filter === 'all' || filter === 'scenes';
-  const showWorlds = filter === 'all' || filter === 'worlds';
+  };
 
   return (
     <div className="failing-view">
-      <h3>Failing Scenes & Worlds</h3>
+      <h3>Failing Scenes & Entities</h3>
+
+      {/* Data source toggle */}
+      <div className="data-source-toggle">
+        <button
+          className={`toggle-btn ${dataSource === 'database' ? 'active' : ''}`}
+          onClick={() => setDataSource('database')}
+        >
+          Database History
+        </button>
+        <button
+          className={`toggle-btn ${dataSource === 'report' ? 'active' : ''}`}
+          onClick={() => !isReportDisabled && setDataSource('report')}
+          disabled={isReportDisabled}
+          title={isReportDisabled ? 'Report is being generated...' : undefined}
+        >
+          Report Data
+          {isReportDisabled && <span className="generating-indicator"> (generating...)</span>}
+        </button>
+      </div>
 
       <div className="failing-stats">
         <div className="stat-card failed">
           <div className="stat-value">{totalFailed}</div>
           <div className="stat-label">Total Failed</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-value">{failedScenes.length}</div>
-          <div className="stat-label">Failed Scenes</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{failedWorlds.length}</div>
-          <div className="stat-label">Failed Worlds</div>
-        </div>
+        {dataSource === 'report' ? (
+          <>
+            <div className="stat-card">
+              <div className="stat-value">{failedScenes.length}</div>
+              <div className="stat-label">Failed Scenes</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-value">{failedWorlds.length}</div>
+              <div className="stat-label">Failed Worlds</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="stat-card">
+              <div className="stat-value">{dbScenes.length}</div>
+              <div className="stat-label">Failed Scenes</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-value">{dbWearables.length}</div>
+              <div className="stat-label">Failed Wearables</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-value">{dbEmotes.length}</div>
+              <div className="stat-label">Failed Emotes</div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="failing-controls">
@@ -404,14 +526,31 @@ export function FailingView({ worlds, lands }: FailingViewProps) {
               className={filter === 'scenes' ? 'active' : ''}
               onClick={() => setFilter('scenes')}
             >
-              Scenes ({failedScenes.length})
+              Scenes ({dataSource === 'report' ? failedScenes.length : dbScenes.length})
             </button>
-            <button
-              className={filter === 'worlds' ? 'active' : ''}
-              onClick={() => setFilter('worlds')}
-            >
-              Worlds ({failedWorlds.length})
-            </button>
+            {dataSource === 'report' ? (
+              <button
+                className={filter === 'worlds' ? 'active' : ''}
+                onClick={() => setFilter('worlds')}
+              >
+                Worlds ({failedWorlds.length})
+              </button>
+            ) : (
+              <>
+                <button
+                  className={filter === 'wearables' ? 'active' : ''}
+                  onClick={() => setFilter('wearables')}
+                >
+                  Wearables ({dbWearables.length})
+                </button>
+                <button
+                  className={filter === 'emotes' ? 'active' : ''}
+                  onClick={() => setFilter('emotes')}
+                >
+                  Emotes ({dbEmotes.length})
+                </button>
+              </>
+            )}
           </div>
         </div>
         <div className="failing-actions">
@@ -420,41 +559,37 @@ export function FailingView({ worlds, lands }: FailingViewProps) {
             onClick={handleCopySceneIds}
             disabled={getSceneIdsToQueue().length === 0}
           >
-            {copySuccess ? 'Copied!' : `Copy Scene IDs (${getSceneIdsToQueue().length})`}
+            {copySuccess ? 'Copied!' : `Copy IDs (${getSceneIdsToQueue().length})`}
           </button>
           <button
             className="add-to-priority-btn"
             onClick={handleAddToPriority}
             disabled={getSceneIdsToQueue().length === 0}
           >
-            Add All to Priority ({getSceneIdsToQueue().length})
+            Add to Priority ({getSceneIdsToQueue().length})
           </button>
+          {dataSource === 'database' && (
+            <button
+              className="refresh-btn"
+              onClick={fetchFailedJobs}
+              disabled={isLoadingJobs}
+            >
+              {isLoadingJobs ? 'Refreshing...' : 'Refresh'}
+            </button>
+          )}
         </div>
       </div>
 
       {searchQuery && (
         <div className="failing-filter-info">
-          Showing {filteredScenes.length + filteredWorlds.length} of {totalFailed} failed items
+          Showing {dataSource === 'report'
+            ? filteredScenes.length + filteredWorlds.length
+            : filteredDbJobs.length
+          } of {totalFailed} failed items
         </div>
       )}
 
-      <div className="history-grid">
-        {showWorlds && filteredWorlds.map((world) => (
-          <FailedWorldCard
-            key={world.sceneId}
-            world={world}
-            onViewReport={() => setSelectedSceneId(world.sceneId)}
-          />
-        ))}
-        {showScenes && filteredScenes.map((scene) => (
-          <FailedSceneCard
-            key={scene.sceneId}
-            sceneId={scene.sceneId}
-            positions={scene.positions}
-            onViewReport={() => setSelectedSceneId(scene.sceneId)}
-          />
-        ))}
-      </div>
+      {renderContent()}
 
       {selectedSceneId && (
         <ReportModal
@@ -472,7 +607,7 @@ export function FailingView({ worlds, lands }: FailingViewProps) {
             {!queueResult && !isQueuing && (
               <>
                 <p className="modal-description">
-                  This will add {getSceneIdsToQueue().length} scene(s) to the priority queue for re-processing.
+                  This will add {getSceneIdsToQueue().length} item(s) to the priority queue for re-processing.
                 </p>
                 <div className="modal-form">
                   <label>
@@ -508,7 +643,7 @@ export function FailingView({ worlds, lands }: FailingViewProps) {
             {isQueuing && (
               <div className="modal-loading">
                 <div className="spinner" />
-                <p>Adding scenes to priority queue...</p>
+                <p>Adding to priority queue...</p>
               </div>
             )}
 
@@ -519,12 +654,12 @@ export function FailingView({ worlds, lands }: FailingViewProps) {
                     {queueResult.failed === 0 ? '✓' : '⚠'}
                   </div>
                   <div className="result-text">
-                    <strong>{queueResult.queued}</strong> of <strong>{queueResult.total}</strong> scenes queued
+                    <strong>{queueResult.queued}</strong> of <strong>{queueResult.total}</strong> items queued
                   </div>
                 </div>
                 {queueResult.failed > 0 && (
                   <div className="result-failures">
-                    <p>{queueResult.failed} scene(s) failed to queue:</p>
+                    <p>{queueResult.failed} item(s) failed to queue:</p>
                     <ul>
                       {queueResult.results.failed.slice(0, 5).map((f, i) => (
                         <li key={i}>

@@ -171,11 +171,11 @@ export default function App() {
 
       {activeTab === 'failing' && (
         <div className="tab-content active">
-          {reportNotReady ? (
-            renderReportLoadingStatus()
-          ) : data && (
-            <FailingView worlds={data.worlds} lands={data.lands} />
-          )}
+          <FailingView
+            worlds={data?.worlds || []}
+            lands={data?.lands || []}
+            generatingStatus={generatingStatus}
+          />
         </div>
       )}
 

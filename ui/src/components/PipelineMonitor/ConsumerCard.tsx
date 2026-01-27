@@ -1,25 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { Consumer } from '../../types';
+import { EntityInfo, getEntityTypeInfo } from '../shared/EntityInfo';
 
 interface ConsumerCardProps {
   consumer: Consumer;
 }
-
-interface SceneMetadata {
-  name: string;
-  thumbnail?: string;
-  positions: string[];
-  loading: boolean;
-  error?: string;
-  isWorld?: boolean;
-  worldName?: string;
-}
-
-const CATALYST_URL = 'https://peer.decentraland.org/content';
-const WORLDS_URL = 'https://worlds-content-server.decentraland.org';
-
-// Cache for scene metadata to avoid refetching
-const sceneMetadataCache = new Map<string, SceneMetadata>();
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -60,123 +45,15 @@ function truncateId(id: string): string {
   return `${id.slice(0, 6)}...${id.slice(-4)}`;
 }
 
-interface EntityResponse {
-  content?: { file: string; hash: string }[];
-  metadata?: {
-    display?: {
-      title?: string;
-      navmapThumbnail?: string;
-    };
-    scene?: {
-      base?: string;
-      parcels?: string[];
-    };
-    worldConfiguration?: {
-      name?: string;
-    };
-  };
-}
-
-async function fetchSceneData(baseUrl: string, hash: string, isWorld: boolean = false): Promise<SceneMetadata | null> {
-  try {
-    const response = await fetch(`${baseUrl}/contents/${hash}`);
-    if (!response.ok) {
-      return null;
-    }
-
-    const entity: EntityResponse = await response.json();
-
-    // Check if this looks like an entity response with metadata
-    if (!entity.metadata) {
-      return null;
-    }
-
-    const metadata = entity.metadata;
-    const name = metadata.display?.title || 'Unnamed Scene';
-
-    // Use base parcel for position
-    const baseParcel = metadata.scene?.base;
-    const positions = baseParcel ? [baseParcel] : [];
-
-    // Get world name from worldConfiguration if available
-    const worldName = metadata.worldConfiguration?.name;
-
-    // Find thumbnail from content mapping
-    let thumbnail: string | undefined;
-    const navmapThumbnail = metadata.display?.navmapThumbnail;
-    if (navmapThumbnail && entity.content) {
-      const thumbContent = entity.content.find(c => c.file === navmapThumbnail);
-      if (thumbContent) {
-        thumbnail = `${baseUrl}/contents/${thumbContent.hash}`;
-      }
-    }
-
-    return {
-      name,
-      thumbnail,
-      positions,
-      loading: false,
-      isWorld,
-      worldName,
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function fetchSceneMetadata(sceneId: string): Promise<SceneMetadata> {
-  // Check cache first
-  const cached = sceneMetadataCache.get(sceneId);
-  if (cached && !cached.loading) {
-    return cached;
-  }
-
-  // Try Catalyst first (regular scenes)
-  let metadata = await fetchSceneData(CATALYST_URL, sceneId, false);
-
-  // If not found, try Worlds server
-  if (!metadata) {
-    metadata = await fetchSceneData(WORLDS_URL, sceneId, true);
-  }
-
-  // If still not found, return error
-  if (!metadata) {
-    const errorMetadata: SceneMetadata = {
-      name: 'Unknown',
-      positions: [],
-      loading: false,
-      error: 'Entity not found',
-    };
-    sceneMetadataCache.set(sceneId, errorMetadata);
-    return errorMetadata;
-  }
-
-  sceneMetadataCache.set(sceneId, metadata);
-  return metadata;
-}
-
 export function ConsumerCard({ consumer }: ConsumerCardProps) {
-  const [sceneMetadata, setSceneMetadata] = useState<SceneMetadata | null>(null);
   const [copied, setCopied] = useState(false);
 
   const elapsedTime = consumer.startedAt
     ? Date.now() - new Date(consumer.startedAt).getTime()
     : 0;
 
-  useEffect(() => {
-    if (consumer.currentSceneId) {
-      // Check cache first
-      const cached = sceneMetadataCache.get(consumer.currentSceneId);
-      if (cached) {
-        setSceneMetadata(cached);
-      } else {
-        setSceneMetadata({ name: '', positions: [], loading: true });
-        fetchSceneMetadata(consumer.currentSceneId).then(setSceneMetadata);
-      }
-    } else {
-      setSceneMetadata(null);
-    }
-  }, [consumer.currentSceneId]);
+  const isScene = !consumer.entityType || consumer.entityType === 'scene';
+  const entityInfo = getEntityTypeInfo(consumer.entityType);
 
   const copySceneId = () => {
     if (consumer.currentSceneId) {
@@ -198,6 +75,11 @@ export function ConsumerCard({ consumer }: ConsumerCardProps) {
               ⚡ PRIORITY
             </span>
           )}
+          {!isScene && consumer.status === 'processing' && (
+            <span className={`entity-type-badge ${entityInfo.className}`} title={`Processing ${consumer.entityType}`}>
+              {entityInfo.icon} {entityInfo.label}
+            </span>
+          )}
           <span className={`consumer-status ${getStatusClass(consumer.status)}`}>
             {consumer.status}
           </span>
@@ -206,40 +88,13 @@ export function ConsumerCard({ consumer }: ConsumerCardProps) {
 
       {consumer.status === 'processing' && consumer.currentSceneId && (
         <div className="consumer-current">
-          {/* Scene Info Section */}
+          {/* Entity Info Section */}
           <div className="scene-info">
-            {sceneMetadata?.thumbnail && (
-              <img
-                src={sceneMetadata.thumbnail}
-                alt={sceneMetadata.name}
-                className="scene-thumbnail"
-              />
-            )}
-            <div className="scene-details">
-              {sceneMetadata?.loading ? (
-                <div className="scene-name loading">Loading...</div>
-              ) : (
-                <>
-                  <div className="scene-name" title={sceneMetadata?.name}>
-                    {sceneMetadata?.name || 'Unknown Scene'}
-                  </div>
-                  {sceneMetadata?.isWorld && sceneMetadata?.worldName ? (
-                    <div className="scene-world-name">
-                      🌐 {sceneMetadata.worldName}
-                    </div>
-                  ) : (
-                    sceneMetadata?.positions && sceneMetadata.positions.length > 0 && (
-                      <div className="scene-position">
-                        {sceneMetadata.positions.length === 1
-                          ? sceneMetadata.positions[0]
-                          : `${sceneMetadata.positions[0]} (+${sceneMetadata.positions.length - 1} more)`
-                        }
-                      </div>
-                    )
-                  )}
-                </>
-              )}
-            </div>
+            <EntityInfo
+              entityId={consumer.currentSceneId}
+              entityType={consumer.entityType}
+              showThumbnail={true}
+            />
           </div>
 
           {/* Scene ID with copy */}

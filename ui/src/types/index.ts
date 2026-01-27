@@ -92,6 +92,7 @@ export interface RankingEntry {
   status: string;
   durationMs: number;
   completedAt: string;
+  entityType?: EntityType;
 }
 
 // World types
@@ -137,6 +138,7 @@ export interface Consumer {
   avgProcessingTimeMs: number;
   isPriority?: boolean;
   lastJobStatus?: 'success' | 'failed';
+  entityType?: EntityType;
 }
 
 export interface ProcessingHistoryEntry {
@@ -146,6 +148,7 @@ export interface ProcessingHistoryEntry {
   status: 'success' | 'failed';
   durationMs: number;
   completedAt: string;
+  entityType?: EntityType;
 }
 
 export interface MonitoringData {
@@ -156,4 +159,20 @@ export interface MonitoringData {
   consumers: Consumer[];
   recentHistory: ProcessingHistoryEntry[];
   processedLastHour: number;
+}
+
+// Failed jobs from database history
+export interface FailedJobEntry {
+  sceneId: string;
+  processMethod: string;
+  completedAt: string;
+  errorMessage: string | null;
+  entityType: EntityType;
+}
+
+// Generating status from report hook
+export interface GeneratingStatus {
+  generating: boolean;
+  progress: number;
+  progressMessage: string;
 }

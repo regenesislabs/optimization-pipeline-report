@@ -18,6 +18,7 @@ interface QueueDepthChartProps {
   onTimeRangeChange: (range: TimeRange) => void;
   color?: string;
   label?: string;
+  showTimeSelector?: boolean;
 }
 
 const TIME_RANGE_MS: Record<TimeRange, number> = {
@@ -62,7 +63,7 @@ function generateTicks(startTime: number, endTime: number, count: number): numbe
   return ticks;
 }
 
-export function QueueDepthChart({ history, timeRange, onTimeRangeChange, color = '#667eea', label = 'Queue Depth' }: QueueDepthChartProps) {
+export function QueueDepthChart({ history, timeRange, onTimeRangeChange, color = '#667eea', label = 'Queue Depth', showTimeSelector = true }: QueueDepthChartProps) {
   const timeRangeOptions: TimeRange[] = ['7d', '3d', '24h', '12h', '6h', '3h', '1h'];
 
   const { filteredData, domain, ticks } = useMemo(() => {
@@ -89,18 +90,20 @@ export function QueueDepthChart({ history, timeRange, onTimeRangeChange, color =
 
   const renderHeader = () => (
     <div className="queue-chart-header">
-      <h4>Queue Depth</h4>
-      <div className="time-range-selector">
-        {timeRangeOptions.map(range => (
-          <button
-            key={range}
-            className={timeRange === range ? 'active' : ''}
-            onClick={() => onTimeRangeChange(range)}
-          >
-            {range}
-          </button>
-        ))}
-      </div>
+      <h4>{label} Queue</h4>
+      {showTimeSelector && (
+        <div className="time-range-selector">
+          {timeRangeOptions.map(range => (
+            <button
+              key={range}
+              className={timeRange === range ? 'active' : ''}
+              onClick={() => onTimeRangeChange(range)}
+            >
+              {range}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 

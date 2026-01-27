@@ -187,7 +187,8 @@ export async function getMonitoringStatus(
         jobs_failed,
         avg_processing_time_ms,
         is_priority,
-        last_job_status
+        last_job_status,
+        entity_type
       FROM pipeline_consumers
       ORDER BY last_heartbeat DESC
     `)
@@ -217,7 +218,8 @@ export async function getMonitoringStatus(
           jobsFailed: row.jobs_failed,
           avgProcessingTimeMs: row.avg_processing_time_ms,
           isPriority: row.is_priority || false,
-          lastJobStatus: row.last_job_status
+          lastJobStatus: row.last_job_status,
+          entityType: row.entity_type || 'scene'
         }
       })
 
@@ -239,7 +241,8 @@ export async function getMonitoringStatus(
         process_method,
         status,
         duration_ms,
-        completed_at
+        completed_at,
+        entity_type
       FROM pipeline_process_history
       ORDER BY completed_at DESC
       LIMIT 20
@@ -251,7 +254,8 @@ export async function getMonitoringStatus(
       processMethod: row.process_method,
       status: row.status,
       durationMs: row.duration_ms,
-      completedAt: row.completed_at
+      completedAt: row.completed_at,
+      entityType: row.entity_type || 'scene'
     }))
 
     // Count scenes processed in last hour
@@ -295,7 +299,8 @@ export async function recordHeartbeat(
     currentStep,
     progressPercent,
     startedAt,
-    isPriority
+    isPriority,
+    entityType = 'scene'
   } = data
 
   // Create table if it doesn't exist
@@ -314,14 +319,16 @@ export async function recordHeartbeat(
       jobs_failed INTEGER DEFAULT 0,
       avg_processing_time_ms INTEGER DEFAULT 0,
       is_priority BOOLEAN DEFAULT FALSE,
-      last_job_status VARCHAR(20)
+      last_job_status VARCHAR(20),
+      entity_type VARCHAR(20) DEFAULT 'scene'
     )
   `)
 
-  // Try to add is_priority and last_job_status columns if they don't exist
+  // Try to add columns if they don't exist
   try {
     await postgres.query(`ALTER TABLE pipeline_consumers ADD COLUMN IF NOT EXISTS is_priority BOOLEAN DEFAULT FALSE`)
     await postgres.query(`ALTER TABLE pipeline_consumers ADD COLUMN IF NOT EXISTS last_job_status VARCHAR(20)`)
+    await postgres.query(`ALTER TABLE pipeline_consumers ADD COLUMN IF NOT EXISTS entity_type VARCHAR(20) DEFAULT 'scene'`)
   } catch (e) {
     // Columns might already exist
   }
@@ -337,8 +344,9 @@ export async function recordHeartbeat(
       progress_percent,
       started_at,
       last_heartbeat,
-      is_priority
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
+      is_priority,
+      entity_type
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)
     ON CONFLICT (id) DO UPDATE SET
       process_method = $2,
       status = $3,
@@ -347,7 +355,8 @@ export async function recordHeartbeat(
       progress_percent = $6,
       started_at = $7,
       last_heartbeat = NOW(),
-      is_priority = $8
+      is_priority = $8,
+      entity_type = $9
   `, [
     consumerId,
     processMethod,
@@ -356,7 +365,8 @@ export async function recordHeartbeat(
     currentStep || null,
     progressPercent || 0,
     startedAt ? new Date(startedAt) : null,
-    isPriority || false
+    isPriority || false,
+    entityType
   ])
 
   return { success: true }
@@ -375,7 +385,8 @@ export async function recordJobComplete(
     completedAt,
     durationMs,
     errorMessage,
-    isPriority
+    isPriority,
+    entityType = 'scene'
   } = data
 
   // Create history table if it doesn't exist
@@ -391,7 +402,8 @@ export async function recordJobComplete(
       duration_ms INTEGER NOT NULL,
       error_message TEXT,
       created_at TIMESTAMP DEFAULT NOW(),
-      is_priority BOOLEAN DEFAULT FALSE
+      is_priority BOOLEAN DEFAULT FALSE,
+      entity_type VARCHAR(20) DEFAULT 'scene'
     )
   `)
 
@@ -400,6 +412,7 @@ export async function recordJobComplete(
     await postgres.query(`CREATE INDEX IF NOT EXISTS idx_history_consumer ON pipeline_process_history(consumer_id)`)
     await postgres.query(`CREATE INDEX IF NOT EXISTS idx_history_created ON pipeline_process_history(created_at DESC)`)
     await postgres.query(`ALTER TABLE pipeline_process_history ADD COLUMN IF NOT EXISTS is_priority BOOLEAN DEFAULT FALSE`)
+    await postgres.query(`ALTER TABLE pipeline_process_history ADD COLUMN IF NOT EXISTS entity_type VARCHAR(20) DEFAULT 'scene'`)
   } catch (e) {
     // Ignore errors
   }
@@ -415,8 +428,9 @@ export async function recordJobComplete(
       completed_at,
       duration_ms,
       error_message,
-      is_priority
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      is_priority,
+      entity_type
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
   `, [
     consumerId,
     sceneId,
@@ -426,7 +440,8 @@ export async function recordJobComplete(
     new Date(completedAt),
     durationMs,
     errorMessage || null,
-    isPriority || false
+    isPriority || false,
+    entityType
   ])
 
   // Update consumer stats
@@ -523,7 +538,8 @@ export async function getRanking(postgres: IPostgresComponent): Promise<{ rankin
         process_method,
         status,
         duration_ms,
-        completed_at
+        completed_at,
+        entity_type
       FROM pipeline_process_history
       WHERE status = 'success'
       ORDER BY duration_ms DESC
@@ -537,12 +553,61 @@ export async function getRanking(postgres: IPostgresComponent): Promise<{ rankin
       processMethod: row.process_method,
       status: row.status,
       durationMs: row.duration_ms,
-      completedAt: row.completed_at
+      completedAt: row.completed_at,
+      entityType: row.entity_type || 'scene'
     }))
 
     return { ranking }
   } catch (e) {
     return { ranking: [] }
+  }
+}
+
+export interface FailedJobEntry {
+  sceneId: string
+  processMethod: string
+  completedAt: string
+  errorMessage: string | null
+  entityType: EntityType
+}
+
+export async function getFailedJobs(postgres: IPostgresComponent): Promise<{ failed: FailedJobEntry[], total: number }> {
+  try {
+    // Get scenes where the MOST RECENT job status is 'failed'
+    // This ensures that if a scene was reprocessed successfully, it won't appear here
+    const result = await postgres.query(`
+      SELECT
+        scene_id,
+        process_method,
+        completed_at,
+        error_message,
+        entity_type
+      FROM (
+        SELECT DISTINCT ON (scene_id)
+          scene_id,
+          process_method,
+          completed_at,
+          error_message,
+          entity_type,
+          status
+        FROM pipeline_process_history
+        ORDER BY scene_id, completed_at DESC
+      ) latest_jobs
+      WHERE status = 'failed'
+      ORDER BY completed_at DESC
+    `)
+
+    const failed: FailedJobEntry[] = result.rows.map(row => ({
+      sceneId: row.scene_id,
+      processMethod: row.process_method,
+      completedAt: row.completed_at,
+      errorMessage: row.error_message,
+      entityType: row.entity_type || 'scene'
+    }))
+
+    return { failed, total: failed.length }
+  } catch (e) {
+    return { failed: [], total: 0 }
   }
 }
 

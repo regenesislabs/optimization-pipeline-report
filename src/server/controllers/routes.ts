@@ -9,6 +9,7 @@ import {
   queueTriggerHandler,
   queueBulkHandler,
   rankingHandler,
+  failedJobsHandler,
   setupDbHandler
 } from './monitoring'
 import { reportDataHandler, reportStatusHandler } from './report'
@@ -34,6 +35,7 @@ export async function setupRoutes(globalContext: GlobalContext): Promise<Router<
   router.post('/api/monitoring/queue-trigger', queueTriggerHandler)
   router.post('/api/monitoring/queue-bulk', queueBulkHandler)
   router.get('/api/monitoring/ranking', rankingHandler)
+  router.get('/api/monitoring/failed-jobs', failedJobsHandler)
   router.post('/api/monitoring/setup-db', setupDbHandler)
 
   // Report data endpoints (local storage)

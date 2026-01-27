@@ -68,6 +68,7 @@ export interface HeartbeatRequest {
   progressPercent?: number
   startedAt?: string
   isPriority?: boolean
+  entityType?: EntityType
 }
 
 export interface JobCompleteRequest {
@@ -81,6 +82,7 @@ export interface JobCompleteRequest {
   durationMs: number
   errorMessage?: string
   isPriority?: boolean
+  entityType?: EntityType
 }
 
 export type EntityType = 'scene' | 'wearable' | 'emote'
@@ -140,6 +142,7 @@ export interface Consumer {
   avgProcessingTimeMs: number
   isPriority: boolean
   lastJobStatus: string | null
+  entityType: EntityType
 }
 
 export interface QueueStatus {
@@ -161,6 +164,7 @@ export interface ProcessHistoryEntry {
   status: string
   durationMs: number
   completedAt: string
+  entityType: EntityType
 }
 
 export interface MonitoringStatusResponse {
@@ -182,6 +186,7 @@ export interface RankingEntry {
   status: string
   durationMs: number
   completedAt: string
+  entityType: EntityType
 }
 
 export interface HistoryEntry {
