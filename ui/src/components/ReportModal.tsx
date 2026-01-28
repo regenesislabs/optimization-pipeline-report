@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { URLS } from '../config';
 import { useQueueTrigger } from '../hooks/useQueueTrigger';
 
+type EntityType = 'scene' | 'wearable' | 'emote';
+
 interface ReportModalProps {
   sceneId: string | null;
   onClose: () => void;
   title?: string;
+  entityType?: EntityType;
 }
 
 function syntaxHighlight(json: string): string {
@@ -34,7 +37,7 @@ function syntaxHighlight(json: string): string {
   );
 }
 
-export function ReportModal({ sceneId, onClose, title }: ReportModalProps) {
+export function ReportModal({ sceneId, onClose, title, entityType }: ReportModalProps) {
   const [content, setContent] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,13 +45,26 @@ export function ReportModal({ sceneId, onClose, title }: ReportModalProps) {
 
   const handleAddToQueue = useCallback(() => {
     if (sceneId) {
-      triggerQueue(sceneId, true);
+      triggerQueue(sceneId, true, entityType);
     }
-  }, [sceneId, triggerQueue]);
+  }, [sceneId, triggerQueue, entityType]);
 
-  const reportUrl = useMemo(() => {
+  // CDN URL (may be cached)
+  const reportUrlCdn = useMemo(() => {
     if (!sceneId) return '';
     return URLS.getSceneReport(sceneId);
+  }, [sceneId]);
+
+  // API URL (from database - always fresh)
+  const reportUrlApi = useMemo(() => {
+    if (!sceneId) return '';
+    return URLS.getSceneReportApi(sceneId);
+  }, [sceneId]);
+
+  // API URL with full base URL (for display)
+  const reportUrlApiDisplay = useMemo(() => {
+    if (!sceneId) return '';
+    return URLS.getSceneReportApiFullUrl(sceneId);
   }, [sceneId]);
 
   useEffect(() => {
@@ -59,14 +75,15 @@ export function ReportModal({ sceneId, onClose, title }: ReportModalProps) {
       setError(null);
 
       try {
-        const response = await fetch(reportUrl);
+        // Fetch from API (database - always fresh)
+        const response = await fetch(reportUrlApi);
 
         if (response.ok) {
           const data = await response.json();
           const formatted = JSON.stringify(data, null, 2);
           setContent(syntaxHighlight(formatted));
         } else if (response.status === 404) {
-          setError('No report found for this scene');
+          setError('No report found in database. Try reprocessing the entity.');
         } else {
           setError(`Error loading report: HTTP ${response.status}`);
         }
@@ -78,7 +95,7 @@ export function ReportModal({ sceneId, onClose, title }: ReportModalProps) {
     }
 
     fetchReport();
-  }, [sceneId, reportUrl]);
+  }, [sceneId, reportUrlApi]);
 
   const handleBackdropClick = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
@@ -109,9 +126,18 @@ export function ReportModal({ sceneId, onClose, title }: ReportModalProps) {
           </button>
         </div>
         <div className="modal-url">
-          <a href={reportUrl} target="_blank" rel="noopener noreferrer">
-            {reportUrl}
-          </a>
+          <div style={{ marginBottom: '4px' }}>
+            <span style={{ color: '#888', fontSize: '11px' }}>CDN (may be cached): </span>
+            <a href={reportUrlCdn} target="_blank" rel="noopener noreferrer">
+              {reportUrlCdn}
+            </a>
+          </div>
+          <div>
+            <span style={{ color: '#888', fontSize: '11px' }}>API (fresh): </span>
+            <a href={reportUrlApiDisplay} target="_blank" rel="noopener noreferrer">
+              {reportUrlApiDisplay}
+            </a>
+          </div>
         </div>
         <div className="modal-actions">
           <button

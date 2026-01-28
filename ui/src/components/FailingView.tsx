@@ -199,8 +199,15 @@ interface BulkQueueResult {
   };
 }
 
+type EntityType = 'scene' | 'wearable' | 'emote';
+
+interface SelectedEntity {
+  sceneId: string;
+  entityType: EntityType;
+}
+
 export function FailingView({ worlds, lands, generatingStatus }: FailingViewProps) {
-  const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
+  const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
   const [filter, setFilter] = useState<'all' | 'scenes' | 'worlds' | 'wearables' | 'emotes'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -291,30 +298,43 @@ export function FailingView({ worlds, lands, generatingStatus }: FailingViewProp
   const filteredDbWearables = filteredDbJobs.filter(j => j.entityType === 'wearable');
   const filteredDbEmotes = filteredDbJobs.filter(j => j.entityType === 'emote');
 
-  // Get scene IDs based on current filter and data source
-  const getSceneIdsToQueue = (): string[] => {
-    const ids: string[] = [];
+  // Get entities with their types based on current filter and data source
+  interface EntityToQueue {
+    sceneId: string;
+    entityType: EntityType;
+  }
+
+  const getEntitiesToQueue = (): EntityToQueue[] => {
+    const entities: EntityToQueue[] = [];
 
     if (dataSource === 'report') {
       if (filter === 'all' || filter === 'scenes') {
-        ids.push(...filteredScenes.map(s => s.sceneId));
+        entities.push(...filteredScenes.map(s => ({ sceneId: s.sceneId, entityType: 'scene' as EntityType })));
       }
       if (filter === 'all' || filter === 'worlds') {
-        ids.push(...filteredWorlds.map(w => w.sceneId));
+        entities.push(...filteredWorlds.map(w => ({ sceneId: w.sceneId, entityType: 'scene' as EntityType })));
       }
     } else {
       if (filter === 'all') {
-        ids.push(...filteredDbJobs.map(j => j.sceneId));
+        entities.push(...filteredDbJobs.map(j => ({
+          sceneId: j.sceneId,
+          entityType: (j.entityType || 'scene') as EntityType
+        })));
       } else if (filter === 'scenes') {
-        ids.push(...filteredDbScenes.map(j => j.sceneId));
+        entities.push(...filteredDbScenes.map(j => ({ sceneId: j.sceneId, entityType: 'scene' as EntityType })));
       } else if (filter === 'wearables') {
-        ids.push(...filteredDbWearables.map(j => j.sceneId));
+        entities.push(...filteredDbWearables.map(j => ({ sceneId: j.sceneId, entityType: 'wearable' as EntityType })));
       } else if (filter === 'emotes') {
-        ids.push(...filteredDbEmotes.map(j => j.sceneId));
+        entities.push(...filteredDbEmotes.map(j => ({ sceneId: j.sceneId, entityType: 'emote' as EntityType })));
       }
     }
 
-    return ids;
+    return entities;
+  };
+
+  // For backwards compatibility - just get the IDs
+  const getSceneIdsToQueue = (): string[] => {
+    return getEntitiesToQueue().map(e => e.sceneId);
   };
 
   const handleCopySceneIds = async () => {
@@ -338,30 +358,65 @@ export function FailingView({ worlds, lands, generatingStatus }: FailingViewProp
   };
 
   const handleSubmitQueue = async () => {
-    const sceneIds = getSceneIdsToQueue();
-    if (sceneIds.length === 0) return;
+    const entities = getEntitiesToQueue();
+    if (entities.length === 0) return;
 
     setIsQueuing(true);
     setQueueError(null);
     setQueueResult(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/monitoring/queue-bulk`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          password,
-          sceneIds,
-        }),
+      // Group entities by type
+      const groupedByType: Record<EntityType, string[]> = {
+        scene: [],
+        wearable: [],
+        emote: [],
+      };
+      entities.forEach(e => {
+        groupedByType[e.entityType].push(e.sceneId);
       });
 
-      const data = await response.json();
+      // Make separate API calls for each entity type
+      const results: BulkQueueResult = {
+        success: true,
+        total: entities.length,
+        queued: 0,
+        failed: 0,
+        results: { success: [], failed: [] },
+      };
 
-      if (!response.ok) {
-        setQueueError(data.error || 'Failed to queue scenes');
-      } else {
-        setQueueResult(data);
+      for (const [entityType, sceneIds] of Object.entries(groupedByType)) {
+        if (sceneIds.length === 0) continue;
+
+        const response = await fetch(`${API_BASE_URL}/api/monitoring/queue-bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            password,
+            sceneIds,
+            entityType,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          setQueueError(data.error || 'Failed to queue items');
+          return;
+        }
+
+        // Aggregate results
+        results.queued += data.queued || 0;
+        results.failed += data.failed || 0;
+        if (data.results?.success) {
+          results.results.success.push(...data.results.success);
+        }
+        if (data.results?.failed) {
+          results.results.failed.push(...data.results.failed);
+        }
       }
+
+      setQueueResult(results);
     } catch (err) {
       setQueueError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -408,7 +463,7 @@ export function FailingView({ worlds, lands, generatingStatus }: FailingViewProp
             <FailedJobCard
               key={`${job.sceneId}-${job.completedAt}`}
               job={job}
-              onViewReport={() => setSelectedSceneId(job.sceneId)}
+              onViewReport={() => setSelectedEntity({ sceneId: job.sceneId, entityType: job.entityType as EntityType })}
             />
           ))}
         </div>
@@ -433,7 +488,7 @@ export function FailingView({ worlds, lands, generatingStatus }: FailingViewProp
           <FailedWorldCard
             key={world.sceneId}
             world={world}
-            onViewReport={() => setSelectedSceneId(world.sceneId)}
+            onViewReport={() => setSelectedEntity({ sceneId: world.sceneId, entityType: 'scene' })}
           />
         ))}
         {showScenes && filteredScenes.map((scene) => (
@@ -441,7 +496,7 @@ export function FailingView({ worlds, lands, generatingStatus }: FailingViewProp
             key={scene.sceneId}
             sceneId={scene.sceneId}
             positions={scene.positions}
-            onViewReport={() => setSelectedSceneId(scene.sceneId)}
+            onViewReport={() => setSelectedEntity({ sceneId: scene.sceneId, entityType: 'scene' })}
           />
         ))}
       </div>
@@ -591,10 +646,11 @@ export function FailingView({ worlds, lands, generatingStatus }: FailingViewProp
 
       {renderContent()}
 
-      {selectedSceneId && (
+      {selectedEntity && (
         <ReportModal
-          sceneId={selectedSceneId}
-          onClose={() => setSelectedSceneId(null)}
+          sceneId={selectedEntity.sceneId}
+          entityType={selectedEntity.entityType}
+          onClose={() => setSelectedEntity(null)}
         />
       )}
 

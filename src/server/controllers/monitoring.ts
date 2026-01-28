@@ -15,8 +15,11 @@ import {
   recordQueueMetrics,
   getRanking,
   getFailedJobs,
-  setupDatabase
+  setupDatabase,
+  getOptimizationResults,
+  getOptimizationResultByEntityId
 } from '../logic/monitoring'
+import { EntityType } from '../types'
 
 // Rate limiting map for queue trigger
 const rateLimitMap = new Map<string, number>()
@@ -235,6 +238,7 @@ export async function queueTriggerHandler(context: HandlerContext): Promise<IHtt
         body: JSON.stringify({
           entity: {
             entityId: body.entityId.trim(),
+            entityType: body.entityType || 'scene',
             authChain: []
           },
           contentServerUrls: body.contentServerUrls || ['https://peer.decentraland.org/content'],
@@ -326,9 +330,11 @@ export async function queueBulkHandler(context: HandlerContext): Promise<IHttpSe
     const invalidCount = body.sceneIds.length - validSceneIds.length
 
     // Build entities array for bulk endpoint
+    const entityType = body.entityType || 'scene'
     const entities = validSceneIds.map(sceneId => ({
       entity: {
         entityId: sceneId.trim(),
+        entityType,
         authChain: []
       },
       contentServerUrls: body.contentServerUrls || ['https://peer.decentraland.org/content']
@@ -466,6 +472,116 @@ export async function setupDbHandler(context: HandlerContext): Promise<IHttpServ
     return {
       status: 500,
       body: { error: 'Failed to setup database: ' + error.message }
+    }
+  }
+}
+
+export async function optimizationResultsHandler(context: HandlerContext): Promise<IHttpServerComponent.IResponse> {
+  const { components, url } = context
+  const logger = components.logs.getLogger('monitoring')
+
+  try {
+    const page = parseInt(url.searchParams.get('page') || '1', 10)
+    const pageSize = Math.min(parseInt(url.searchParams.get('pageSize') || '50', 10), 100)
+    const status = url.searchParams.get('status') as 'success' | 'failed' | null
+    const entityType = url.searchParams.get('entityType') as EntityType | null
+
+    const result = await getOptimizationResults(components.postgres, {
+      page,
+      pageSize,
+      status: status || undefined,
+      entityType: entityType || undefined
+    })
+
+    return {
+      status: 200,
+      body: result
+    }
+  } catch (error: any) {
+    logger.error('Error fetching optimization results', { error: error.message })
+    return {
+      status: 500,
+      body: { error: 'Failed to fetch optimization results: ' + error.message }
+    }
+  }
+}
+
+export async function optimizationResultByIdHandler(context: HandlerContext): Promise<IHttpServerComponent.IResponse> {
+  const { components, params } = context
+  const logger = components.logs.getLogger('monitoring')
+
+  try {
+    const entityId = params.entityId
+
+    if (!entityId) {
+      return {
+        status: 400,
+        body: { error: 'Missing entityId parameter' }
+      }
+    }
+
+    const result = await getOptimizationResultByEntityId(components.postgres, entityId)
+
+    if (!result) {
+      return {
+        status: 404,
+        body: { error: 'Optimization result not found' }
+      }
+    }
+
+    return {
+      status: 200,
+      body: result
+    }
+  } catch (error: any) {
+    logger.error('Error fetching optimization result', { error: error.message })
+    return {
+      status: 500,
+      body: { error: 'Failed to fetch optimization result: ' + error.message }
+    }
+  }
+}
+
+// Handler to serve just the report JSON (for direct report access without CDN cache issues)
+export async function reportJsonHandler(context: HandlerContext): Promise<IHttpServerComponent.IResponse> {
+  const { components, params } = context
+  const logger = components.logs.getLogger('monitoring')
+
+  try {
+    const entityId = params.entityId
+
+    if (!entityId) {
+      return {
+        status: 400,
+        body: { error: 'Missing entityId parameter' }
+      }
+    }
+
+    const result = await getOptimizationResultByEntityId(components.postgres, entityId)
+
+    if (!result) {
+      return {
+        status: 404,
+        body: { error: 'Report not found' }
+      }
+    }
+
+    if (!result.reportJson) {
+      return {
+        status: 404,
+        body: { error: 'Report JSON not available for this entity' }
+      }
+    }
+
+    return {
+      status: 200,
+      body: result.reportJson
+    }
+  } catch (error: any) {
+    logger.error('Error fetching report JSON', { error: error.message })
+    return {
+      status: 500,
+      body: { error: 'Failed to fetch report: ' + error.message }
     }
   }
 }

@@ -83,6 +83,8 @@ export interface JobCompleteRequest {
   errorMessage?: string
   isPriority?: boolean
   entityType?: EntityType
+  thumbnailUrl?: string
+  reportJson?: object  // Full processing report to store in DB (avoids CDN cache)
 }
 
 export type EntityType = 'scene' | 'wearable' | 'emote'
@@ -98,12 +100,14 @@ export interface QueueTriggerRequest {
   entityId: string
   prioritize?: boolean
   contentServerUrls?: string[]
+  entityType?: EntityType  // 'scene' | 'wearable' | 'emote' - defaults to 'scene'
 }
 
 export interface QueueBulkRequest {
   password: string
-  sceneIds: string[]
+  sceneIds: string[]  // Could be any entity IDs, not just scenes
   contentServerUrls?: string[]
+  entityType?: EntityType  // 'scene' | 'wearable' | 'emote' - defaults to 'scene'
 }
 
 export interface UpdateHistoryRequest {
@@ -202,4 +206,33 @@ export interface HistoryEntry {
     successfulOptimizations: number
     failedOptimizations: number
   }
+}
+
+// Optimization Results types (for storing and querying optimization status per entity)
+export interface OptimizationResult {
+  entityId: string
+  entityType: EntityType
+  status: 'success' | 'failed'
+  thumbnailUrl?: string
+  errorMessage?: string
+  processMethod?: string
+  completedAt: string
+  createdAt: string
+  updatedAt: string
+  reportJson?: object  // Full processing report (avoids CDN cache issues)
+}
+
+export interface OptimizationResultsResponse {
+  results: OptimizationResult[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface OptimizationResultsQuery {
+  page?: number
+  pageSize?: number
+  status?: 'success' | 'failed'
+  entityType?: EntityType
 }

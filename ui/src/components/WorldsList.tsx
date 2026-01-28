@@ -107,6 +107,7 @@ export function WorldsList({ worlds, stats }: WorldsListProps) {
       {selectedWorld && (
         <ReportModal
           sceneId={selectedWorld.sceneId}
+          entityType="scene"
           onClose={() => setSelectedWorld(null)}
           title={`World: ${selectedWorld.name}`}
         />

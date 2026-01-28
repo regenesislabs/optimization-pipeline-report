@@ -13,6 +13,14 @@ export const CONFIG = {
 
   // Worlds content server API
   WORLDS_API_URL: import.meta.env.VITE_WORLDS_API_URL || 'https://worlds-content-server.decentraland.org',
+
+  // Get the current origin for display purposes (full URL)
+  get CURRENT_ORIGIN() {
+    if (typeof window !== 'undefined') {
+      return window.location.origin;
+    }
+    return 'http://localhost:3000';
+  },
 } as const;
 
 // Derived URLs
@@ -32,9 +40,20 @@ export const URLS = {
     return `${CONFIG.WORLDS_API_URL}/index`;
   },
 
-  // Get scene report URL
+  // Get scene report URL (from CDN - may be cached)
   getSceneReport(sceneId: string) {
     return `${CONFIG.OPTIMIZATION_API_URL}/${sceneId}-report.json`;
+  },
+
+  // Get scene report URL from API (from database - always fresh)
+  // For fetching (relative path works)
+  getSceneReportApi(sceneId: string) {
+    return `${CONFIG.VERCEL_APP_URL}/api/report/${sceneId}`;
+  },
+
+  // Get scene report URL from API with full URL (for display)
+  getSceneReportApiFullUrl(sceneId: string) {
+    return `${CONFIG.CURRENT_ORIGIN}/api/report/${sceneId}`;
   },
 
   // Get optimized asset URL

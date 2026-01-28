@@ -20,9 +20,11 @@ interface QueueTriggerState {
   lastTriggeredId: string | null;
 }
 
+type EntityType = 'scene' | 'wearable' | 'emote';
+
 interface UseQueueTriggerResult {
   state: QueueTriggerState;
-  triggerQueue: (entityId: string, prioritize?: boolean) => Promise<boolean>;
+  triggerQueue: (entityId: string, prioritize?: boolean, entityType?: EntityType) => Promise<boolean>;
   clearState: () => void;
 }
 
@@ -43,7 +45,7 @@ export function useQueueTrigger(): UseQueueTriggerResult {
     });
   }, []);
 
-  const triggerQueue = useCallback(async (entityId: string, prioritize = true): Promise<boolean> => {
+  const triggerQueue = useCallback(async (entityId: string, prioritize = true, entityType?: EntityType): Promise<boolean> => {
     // Check for stored password first
     let password = getCookie(COOKIE_NAME);
 
@@ -73,6 +75,7 @@ export function useQueueTrigger(): UseQueueTriggerResult {
           password,
           entityId,
           prioritize,
+          entityType: entityType || 'scene',
         }),
       });
 

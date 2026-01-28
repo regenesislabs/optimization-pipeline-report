@@ -189,7 +189,7 @@ export default function App() {
         <Tooltip land={hoveredLand.land} x={hoveredLand.x} y={hoveredLand.y} />
       )}
 
-      <ReportModal sceneId={selectedSceneId} onClose={handleCloseModal} />
+      <ReportModal sceneId={selectedSceneId} entityType="scene" onClose={handleCloseModal} />
     </div>
   );
 }

@@ -79,8 +79,15 @@ function HistoryCard({ entry, onViewReport }: HistoryCardProps) {
   );
 }
 
+type EntityType = 'scene' | 'wearable' | 'emote';
+
+interface SelectedEntity {
+  sceneId: string;
+  entityType: EntityType;
+}
+
 export function ProcessingHistory({ history }: ProcessingHistoryProps) {
-  const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
+  const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
 
   // Limit to 20 entries
   const limitedHistory = history.slice(0, 20);
@@ -102,15 +109,16 @@ export function ProcessingHistory({ history }: ProcessingHistoryProps) {
           <HistoryCard
             key={`${entry.sceneId}-${entry.completedAt}-${index}`}
             entry={entry}
-            onViewReport={() => setSelectedSceneId(entry.sceneId)}
+            onViewReport={() => setSelectedEntity({ sceneId: entry.sceneId, entityType: entry.entityType as EntityType })}
           />
         ))}
       </div>
 
-      {selectedSceneId && (
+      {selectedEntity && (
         <ReportModal
-          sceneId={selectedSceneId}
-          onClose={() => setSelectedSceneId(null)}
+          sceneId={selectedEntity.sceneId}
+          entityType={selectedEntity.entityType}
+          onClose={() => setSelectedEntity(null)}
         />
       )}
     </div>

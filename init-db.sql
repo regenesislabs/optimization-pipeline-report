@@ -59,12 +59,31 @@ CREATE TABLE IF NOT EXISTS pipeline_process_history (
   is_priority BOOLEAN DEFAULT FALSE
 );
 
+-- Optimization results table (for storing final optimization status per entity)
+CREATE TABLE IF NOT EXISTS optimization_results (
+  id SERIAL PRIMARY KEY,
+  entity_id VARCHAR(255) NOT NULL UNIQUE,
+  entity_type VARCHAR(20) NOT NULL,  -- 'scene', 'wearable', 'emote'
+  status VARCHAR(20) NOT NULL,        -- 'success', 'failed'
+  thumbnail_url TEXT,
+  error_message TEXT,
+  process_method VARCHAR(50),
+  completed_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  report_json JSONB                   -- Full processing report (avoids CDN cache issues)
+);
+
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_history_consumer ON pipeline_process_history(consumer_id);
 CREATE INDEX IF NOT EXISTS idx_history_created ON pipeline_process_history(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_queue_metrics_timestamp ON pipeline_queue_metrics(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_queue_metrics_entity_type ON pipeline_queue_metrics(entity_type, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_optimization_history_timestamp ON optimization_history(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_optimization_results_entity ON optimization_results(entity_id);
+CREATE INDEX IF NOT EXISTS idx_optimization_results_status ON optimization_results(status);
+CREATE INDEX IF NOT EXISTS idx_optimization_results_type ON optimization_results(entity_type);
+CREATE INDEX IF NOT EXISTS idx_optimization_results_completed ON optimization_results(completed_at DESC);
 
 -- Grant permissions (if using a different user)
 -- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pipeline;

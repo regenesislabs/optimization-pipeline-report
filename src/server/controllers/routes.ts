@@ -10,7 +10,10 @@ import {
   queueBulkHandler,
   rankingHandler,
   failedJobsHandler,
-  setupDbHandler
+  setupDbHandler,
+  optimizationResultsHandler,
+  optimizationResultByIdHandler,
+  reportJsonHandler
 } from './monitoring'
 import { reportDataHandler, reportStatusHandler } from './report'
 
@@ -37,6 +40,13 @@ export async function setupRoutes(globalContext: GlobalContext): Promise<Router<
   router.get('/api/monitoring/ranking', rankingHandler)
   router.get('/api/monitoring/failed-jobs', failedJobsHandler)
   router.post('/api/monitoring/setup-db', setupDbHandler)
+
+  // Optimization results endpoints
+  router.get('/api/optimization-results', optimizationResultsHandler)
+  router.get('/api/optimization-results/:entityId', optimizationResultByIdHandler)
+
+  // Direct report JSON endpoint (avoids CDN cache issues)
+  router.get('/api/report/:entityId', reportJsonHandler)
 
   // Report data endpoints (local storage)
   router.get('/api/report-data', reportDataHandler)

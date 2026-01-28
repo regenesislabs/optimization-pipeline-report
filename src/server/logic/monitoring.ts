@@ -9,7 +9,10 @@ import {
   QueueHistoryEntry,
   ProcessHistoryEntry,
   RankingEntry,
-  EntityType
+  EntityType,
+  OptimizationResult,
+  OptimizationResultsResponse,
+  OptimizationResultsQuery
 } from '../types'
 
 const ENTITY_TYPES: EntityType[] = ['scene', 'wearable', 'emote']
@@ -386,7 +389,9 @@ export async function recordJobComplete(
     durationMs,
     errorMessage,
     isPriority,
-    entityType = 'scene'
+    entityType = 'scene',
+    thumbnailUrl,
+    reportJson
   } = data
 
   // Create history table if it doesn't exist
@@ -482,6 +487,18 @@ export async function recordJobComplete(
       consumerId
     ])
   }
+
+  // Also record optimization result (upsert)
+  await recordOptimizationResult(postgres, {
+    entityId: sceneId,
+    entityType,
+    status: status as 'success' | 'failed',
+    thumbnailUrl,
+    errorMessage,
+    processMethod,
+    completedAt,
+    reportJson
+  })
 
   return { success: true }
 }
@@ -676,5 +693,253 @@ export async function setupDatabase(postgres: IPostgresComponent): Promise<{ suc
     CREATE INDEX IF NOT EXISTS idx_history_created ON pipeline_process_history(created_at DESC)
   `)
 
+  // Create optimization_results table
+  await postgres.query(`
+    CREATE TABLE IF NOT EXISTS optimization_results (
+      id SERIAL PRIMARY KEY,
+      entity_id VARCHAR(255) NOT NULL UNIQUE,
+      entity_type VARCHAR(20) NOT NULL,
+      status VARCHAR(20) NOT NULL,
+      thumbnail_url TEXT,
+      error_message TEXT,
+      process_method VARCHAR(50),
+      completed_at TIMESTAMP NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      report_json JSONB
+    )
+  `)
+
+  // Add report_json column if it doesn't exist (for existing databases)
+  try {
+    await postgres.query(`ALTER TABLE optimization_results ADD COLUMN IF NOT EXISTS report_json JSONB`)
+  } catch (e) {
+    // Column might already exist
+  }
+
+  // Create indexes for optimization_results
+  await postgres.query(`CREATE INDEX IF NOT EXISTS idx_optimization_results_entity ON optimization_results(entity_id)`)
+  await postgres.query(`CREATE INDEX IF NOT EXISTS idx_optimization_results_status ON optimization_results(status)`)
+  await postgres.query(`CREATE INDEX IF NOT EXISTS idx_optimization_results_type ON optimization_results(entity_type)`)
+  await postgres.query(`CREATE INDEX IF NOT EXISTS idx_optimization_results_completed ON optimization_results(completed_at DESC)`)
+
   return { success: true, message: 'Database tables created successfully' }
+}
+
+// Record optimization result (upsert - updates if entity already exists)
+export async function recordOptimizationResult(
+  postgres: IPostgresComponent,
+  data: {
+    entityId: string
+    entityType: EntityType
+    status: 'success' | 'failed'
+    thumbnailUrl?: string
+    errorMessage?: string
+    processMethod?: string
+    completedAt: string
+    reportJson?: object
+  }
+): Promise<{ success: boolean }> {
+  const {
+    entityId,
+    entityType,
+    status,
+    thumbnailUrl,
+    errorMessage,
+    processMethod,
+    completedAt,
+    reportJson
+  } = data
+
+  // Create table if it doesn't exist
+  await postgres.query(`
+    CREATE TABLE IF NOT EXISTS optimization_results (
+      id SERIAL PRIMARY KEY,
+      entity_id VARCHAR(255) NOT NULL UNIQUE,
+      entity_type VARCHAR(20) NOT NULL,
+      status VARCHAR(20) NOT NULL,
+      thumbnail_url TEXT,
+      error_message TEXT,
+      process_method VARCHAR(50),
+      completed_at TIMESTAMP NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      report_json JSONB
+    )
+  `)
+
+  // Try to add report_json column if it doesn't exist
+  try {
+    await postgres.query(`ALTER TABLE optimization_results ADD COLUMN IF NOT EXISTS report_json JSONB`)
+  } catch (e) {
+    // Column might already exist
+  }
+
+  // Upsert optimization result
+  await postgres.query(`
+    INSERT INTO optimization_results (
+      entity_id,
+      entity_type,
+      status,
+      thumbnail_url,
+      error_message,
+      process_method,
+      completed_at,
+      updated_at,
+      report_json
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
+    ON CONFLICT (entity_id) DO UPDATE SET
+      entity_type = $2,
+      status = $3,
+      thumbnail_url = $4,
+      error_message = $5,
+      process_method = $6,
+      completed_at = $7,
+      updated_at = NOW(),
+      report_json = $8
+  `, [
+    entityId,
+    entityType,
+    status,
+    thumbnailUrl || null,
+    errorMessage || null,
+    processMethod || null,
+    new Date(completedAt),
+    reportJson ? JSON.stringify(reportJson) : null
+  ])
+
+  return { success: true }
+}
+
+// Get optimization results with pagination
+export async function getOptimizationResults(
+  postgres: IPostgresComponent,
+  query: OptimizationResultsQuery = {}
+): Promise<OptimizationResultsResponse> {
+  const {
+    page = 1,
+    pageSize = 50,
+    status,
+    entityType
+  } = query
+
+  const offset = (page - 1) * pageSize
+
+  // Build WHERE clause
+  const conditions: string[] = []
+  const params: any[] = []
+  let paramIndex = 1
+
+  if (status) {
+    conditions.push(`status = $${paramIndex++}`)
+    params.push(status)
+  }
+
+  if (entityType) {
+    conditions.push(`entity_type = $${paramIndex++}`)
+    params.push(entityType)
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+  try {
+    // Get total count
+    const countResult = await postgres.query(
+      `SELECT COUNT(*) as count FROM optimization_results ${whereClause}`,
+      params
+    )
+    const total = parseInt(countResult.rows[0]?.count || '0', 10)
+
+    // Get paginated results (excluding report_json to keep response size small)
+    const result = await postgres.query(`
+      SELECT
+        entity_id,
+        entity_type,
+        status,
+        thumbnail_url,
+        error_message,
+        process_method,
+        completed_at,
+        created_at,
+        updated_at,
+        CASE WHEN report_json IS NOT NULL THEN true ELSE false END as has_report
+      FROM optimization_results
+      ${whereClause}
+      ORDER BY completed_at DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex}
+    `, [...params, pageSize, offset])
+
+    const results: OptimizationResult[] = result.rows.map(row => ({
+      entityId: row.entity_id,
+      entityType: row.entity_type,
+      status: row.status,
+      thumbnailUrl: row.thumbnail_url || undefined,
+      errorMessage: row.error_message || undefined,
+      processMethod: row.process_method || undefined,
+      completedAt: row.completed_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }))
+
+    return {
+      results,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize)
+    }
+  } catch (e) {
+    // Table might not exist yet
+    return {
+      results: [],
+      total: 0,
+      page,
+      pageSize,
+      totalPages: 0
+    }
+  }
+}
+
+// Get optimization result by entity ID
+export async function getOptimizationResultByEntityId(
+  postgres: IPostgresComponent,
+  entityId: string
+): Promise<OptimizationResult | null> {
+  try {
+    const result = await postgres.query(`
+      SELECT
+        entity_id,
+        entity_type,
+        status,
+        thumbnail_url,
+        error_message,
+        process_method,
+        completed_at,
+        created_at,
+        updated_at,
+        report_json
+      FROM optimization_results
+      WHERE entity_id = $1
+    `, [entityId])
+
+    if (result.rows.length === 0) {
+      return null
+    }
+
+    const row = result.rows[0]
+    return {
+      entityId: row.entity_id,
+      entityType: row.entity_type,
+      status: row.status,
+      thumbnailUrl: row.thumbnail_url || undefined,
+      errorMessage: row.error_message || undefined,
+      processMethod: row.process_method || undefined,
+      completedAt: row.completed_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      reportJson: row.report_json || undefined
+    }
+  } catch (e) {
+    return null
+  }
 }

@@ -75,10 +75,16 @@ function RankingCard({ entry, onViewReport }: RankingCardProps) {
 }
 
 export function RankingView() {
+  type EntityType = 'scene' | 'wearable' | 'emote';
+  interface SelectedEntity {
+    sceneId: string;
+    entityType: EntityType;
+  }
+
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
+  const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
 
   useEffect(() => {
     async function fetchRanking() {
@@ -134,15 +140,16 @@ export function RankingView() {
           <RankingCard
             key={`${entry.sceneId}-${entry.completedAt}`}
             entry={entry}
-            onViewReport={() => setSelectedSceneId(entry.sceneId)}
+            onViewReport={() => setSelectedEntity({ sceneId: entry.sceneId, entityType: (entry.entityType || 'scene') as EntityType })}
           />
         ))}
       </div>
 
-      {selectedSceneId && (
+      {selectedEntity && (
         <ReportModal
-          sceneId={selectedSceneId}
-          onClose={() => setSelectedSceneId(null)}
+          sceneId={selectedEntity.sceneId}
+          entityType={selectedEntity.entityType}
+          onClose={() => setSelectedEntity(null)}
         />
       )}
     </div>
