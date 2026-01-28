@@ -75,14 +75,19 @@ export class DecentralandAPI {
         timeout: 10000, // Increased timeout
         validateStatus: (status) => status < 500
       });
-      
+
       if (response.status === 200 && response.data) {
+        // Handle both old format (success at top level) and new format (result.success)
+        const success = response.data.result?.success ?? response.data.success ?? false;
+        const errors = response.data.errors || [];
+        const individualAssets = response.data.individualAssets;
+
         return {
           sceneId,
-          success: response.data.success || false,
+          success,
           fatalError: response.data.fatalError || false,
-          timestamp: response.data.timestamp,
-          error: response.data.error,
+          timestamp: response.data.finishedAt || response.data.timestamp,
+          error: errors.length > 0 ? errors[0] : response.data.error,
           details: response.data
         };
       }
@@ -192,16 +197,16 @@ export class DecentralandAPI {
       console.log(`Found ${optimizedCount} scenes with optimized assets (using HTTP)`);
     }
     
-    // Fetch reports for scenes without optimized assets
-    console.log('\nFetching optimization reports for non-optimized scenes...');
+    // Fetch reports for ALL scenes (to check success status even for scenes with files)
+    console.log('\nFetching optimization reports for all scenes...');
     onProgress?.(50, 'Fetching optimization reports...');
-    const nonOptimizedScenes = uniqueScenes.filter(s => !s.hasOptimizedAssets);
     let reportsChecked = 0;
     let reportsFound = 0;
+    let failedOptimizations = 0;
 
     const reportBatchSize = 20;
-    for (let i = 0; i < nonOptimizedScenes.length; i += reportBatchSize) {
-      const batch = nonOptimizedScenes.slice(i, Math.min(i + reportBatchSize, nonOptimizedScenes.length));
+    for (let i = 0; i < uniqueScenes.length; i += reportBatchSize) {
+      const batch = uniqueScenes.slice(i, Math.min(i + reportBatchSize, uniqueScenes.length));
 
       await Promise.all(
         batch.map(async (scene) => {
@@ -209,21 +214,27 @@ export class DecentralandAPI {
           if (report) {
             scene.optimizationReport = report;
             reportsFound++;
+            // If report exists and shows failure, mark as NOT optimized
+            // even if the -mobile.zip file exists
+            if (!report.success) {
+              scene.hasOptimizedAssets = false;
+              failedOptimizations++;
+            }
           }
         })
       );
 
       reportsChecked += batch.length;
-      const progress = (reportsChecked / nonOptimizedScenes.length) * 100;
-      console.log(`Report check progress: ${progress.toFixed(2)}% (${reportsChecked}/${nonOptimizedScenes.length}) - Found ${reportsFound} reports`);
+      const progress = (reportsChecked / uniqueScenes.length) * 100;
+      console.log(`Report check progress: ${progress.toFixed(2)}% (${reportsChecked}/${uniqueScenes.length}) - Found ${reportsFound} reports (${failedOptimizations} failed)`);
 
       // Report progress (50-100% for report fetching)
-      onProgress?.(50 + progress * 0.5, `Fetching reports: ${reportsChecked}/${nonOptimizedScenes.length}`);
+      onProgress?.(50 + progress * 0.5, `Fetching reports: ${reportsChecked}/${uniqueScenes.length}`);
 
       await new Promise(resolve => setTimeout(resolve, 50));
     }
 
-    console.log(`Found ${reportsFound} optimization reports`);
+    console.log(`Found ${reportsFound} optimization reports (${failedOptimizations} marked as failed)`);
     
     return scenes.map(scene => {
       const uniqueScene = uniqueScenes.find(s => s.id === scene.id);
