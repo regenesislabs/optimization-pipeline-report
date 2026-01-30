@@ -449,6 +449,265 @@ canvas {
   color: #569cd6;
 }
 
+/* Modal header with toggle */
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Structured Report View */
+.structured-report {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.report-header-info {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.report-entity-card {
+  flex: 1;
+  min-width: 0;
+}
+
+.report-status-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.report-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.report-badge--success {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.report-badge--failure {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.report-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.report-meta__row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  align-items: baseline;
+}
+
+.report-meta__label {
+  color: #888;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.report-meta__value {
+  color: #ccc;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+}
+
+.report-id-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #1a1a2e;
+  border-radius: 6px;
+}
+
+.report-id-value {
+  color: #9cdcfe;
+  font-size: 12px;
+  word-break: break-all;
+  user-select: all;
+}
+
+/* Stats grid */
+.report-result-grid {
+  display: flex;
+  gap: 12px;
+}
+
+.report-stat {
+  flex: 1;
+  text-align: center;
+  padding: 12px 8px;
+  background: #1a1a2e;
+  border-radius: 8px;
+  border: 1px solid #2a2a3e;
+}
+
+.report-stat__value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #e0e0e0;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.report-stat__value--success {
+  color: #4ade80;
+}
+
+.report-stat__value--failure {
+  color: #f87171;
+}
+
+.report-stat__label {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Collapsible sections */
+.report-section {
+  border: 1px solid #2a2a3e;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.report-section__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: #1a1a2e;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.report-section__header:hover {
+  background: #222240;
+}
+
+.report-section__arrow {
+  font-size: 10px;
+  color: #888;
+  width: 14px;
+}
+
+.report-section__title {
+  flex: 1;
+}
+
+.report-section__count {
+  background: #333;
+  color: #aaa;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: normal;
+}
+
+.report-section__body {
+  border-top: 1px solid #2a2a3e;
+}
+
+/* Log lists */
+.report-log-list {
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.report-log-line {
+  padding: 2px 14px;
+  color: #ccc;
+  border-bottom: 1px solid #1a1a2e;
+  word-break: break-all;
+}
+
+.report-log-line:last-child {
+  border-bottom: none;
+}
+
+.report-log-line--error {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.report-log-line--success {
+  color: #4ade80;
+}
+
+.report-log-line--stderr {
+  color: #fbbf24;
+}
+
+.report-log-line--file {
+  color: #60a5fa;
+}
+
+.report-log-list--errors .report-log-line {
+  padding: 6px 14px;
+}
+
+.report-log-list--process {
+  max-height: 400px;
+  background: #0a0a0a;
+}
+
+/* View toggle */
+.report-view-toggle {
+  display: flex;
+  border: 1px solid #444;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.report-view-toggle__btn {
+  padding: 4px 12px;
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.report-view-toggle__btn:first-child {
+  border-right: 1px solid #444;
+}
+
+.report-view-toggle__btn--active {
+  background: #333;
+  color: #fff;
+}
+
+.report-view-toggle__btn:hover:not(.report-view-toggle__btn--active) {
+  background: #2a2a2a;
+}
+
 .loading {
   text-align: center;
   color: #667eea;
